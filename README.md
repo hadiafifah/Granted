@@ -1,6 +1,6 @@
 # Granted
 
-url: https://granted-2o1r.onrender.com 
+url: https://granted-2o1r.onrender.com/ui
 
 1. From terminal at root directory, run:
 ```
