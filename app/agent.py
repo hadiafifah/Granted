@@ -132,6 +132,7 @@ search_tool = TavilySearchResults(
     search_depth="advanced",
     include_answer=True,
     name="web_search",
+    time_range="year",
     description="Use this tool to search the web for active, real-world grant opportunities. Input should be a highly targeted search query."
 )
 
