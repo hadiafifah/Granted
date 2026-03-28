@@ -173,6 +173,12 @@ Extra context (optional): {context or "N/A"}
 SCOPES =["https://www.googleapis.com/auth/calendar.events"]
 
 def _get_calendar_service():
+    """
+    Auth priority:
+    1) GOOGLE_OAUTH_TOKEN_JSON / GOOGLE_OAUTH_CLIENT_JSON (recommended for Render)
+    2) GOOGLE_OAUTH_TOKEN_PATH / GOOGLE_OAUTH_CLIENT_PATH
+    3) token.json / credentials.json (local dev fallback)
+    """
     creds = None
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
