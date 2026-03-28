@@ -212,6 +212,7 @@ class EmailDraftInput(BaseModel):
     grant_name: Optional[str] = Field(None, description="Grant/funder name if relevant")
     context: Optional[str] = Field(None, description="Any extra context to include (optional)")
 
+# Change the return type hint from Dict[str, str] to str
 @tool("generate_email_draft", args_schema=EmailDraftInput)
 def generate_email_draft(
     org_name: str,
@@ -219,10 +220,10 @@ def generate_email_draft(
     recipient_type: Optional[str] = "funder",
     grant_name: Optional[str] = None,
     context: Optional[str] = None
-) -> Dict[str, str]:
+) -> str:  # <--- Updated return type
     """
-    Generates an email draft for demo purposes.
-    DOES NOT send email. Prints the draft.
+    Generates an email draft for outreach.
+    Returns the formatted email text directly so the agent can show it to the user.
     """
 
     prompt = f"""
@@ -256,13 +257,14 @@ Extra context (optional): {context or "N/A"}
     if "BODY:" in resp:
         body = resp.split("BODY:", 1)[1].strip()
 
-    # print for demo
+    # print for terminal demo
     print("\n================ EMAIL DRAFT ================")
     print("SUBJECT:", subject)
     print("\nBODY:\n" + body)
     print("============================================\n")
 
-    return {"subject": subject, "body": body}
+    # RETURN A FORMATTED STRING instead of a dictionary
+    return f"**SUBJECT:** {subject}\n\n**BODY:**\n{body}"
 
 from datetime import datetime, timedelta
 import os
@@ -338,11 +340,16 @@ def create_grant_deadline_event(
 tools = [search_tool, generate_email_draft, generate_grant_and_save_pdf, create_grant_deadline_event]
 
 from langgraph.prebuilt import create_react_agent
+from datetime import datetime # Make sure this is imported
+
+# Get the actual current year
+current_year = datetime.now().year
 
 agent = create_react_agent(
     model=llm,
     tools=tools,
-    prompt="""You are an autonomous expert grant and outreach assistant for nonprofits.
+    # Add 'f' right before the triple quotes to make it an f-string
+    prompt=f"""You are an autonomous expert grant and outreach assistant for nonprofits.
 
 The current year is {current_year}. 
 
