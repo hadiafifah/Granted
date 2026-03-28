@@ -303,17 +303,48 @@ def _get_calendar_service():
     3) token.json / credentials.json (local dev fallback)
     """
     creds = None
-    if os.path.exists("token.json"):
+
+    token_json_env = os.getenv("GOOGLE_OAUTH_TOKEN_JSON")
+    client_json_env = os.getenv("GOOGLE_OAUTH_CLIENT_JSON")
+    token_path_env = os.getenv("GOOGLE_OAUTH_TOKEN_PATH")
+    client_path_env = os.getenv("GOOGLE_OAUTH_CLIENT_PATH")
+
+    # 1) Preferred for deployment: JSON env vars
+    if token_json_env:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json_env), SCOPES)
+
+    # 2) Optional path-based env vars
+    if not creds and token_path_env and os.path.exists(token_path_env):
+        creds = Credentials.from_authorized_user_file(token_path_env, SCOPES)
+
+    # 3) Local fallback
+    if not creds and os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not os.path.exists("credentials.json"):
-                raise FileNotFoundError("Missing credentials.json.")
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            flow = None
+
+            if client_json_env:
+                flow = InstalledAppFlow.from_client_config(json.loads(client_json_env), SCOPES)
+            elif client_path_env and os.path.exists(client_path_env):
+                flow = InstalledAppFlow.from_client_secrets_file(client_path_env, SCOPES)
+            elif os.path.exists("credentials.json"):
+                flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+
+            if not flow:
+                raise RuntimeError(
+                    "Google Calendar OAuth credentials not configured. Set GOOGLE_OAUTH_TOKEN_JSON + "
+                    "GOOGLE_OAUTH_CLIENT_JSON (recommended for deployment), or provide local credentials.json/token.json."
+                )
+
+            # Interactive login only for local development.
             creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
+
+        token_save_path = token_path_env or "token.json"
+        with open(token_save_path, "w") as token:
             token.write(creds.to_json())
     return build("calendar", "v3", credentials=creds)
 
@@ -326,20 +357,23 @@ def create_grant_deadline_event(
 ) -> str:
     """Create an all-day Google Calendar event for a grant deadline."""
     print("\n[Tool Executing] Creating calendar event for grant.")
-    service = _get_calendar_service()
-    start_date = deadline_date
-    end_date = (datetime.fromisoformat(deadline_date) + timedelta(days=1)).date().isoformat()
-    description = f"Grant deadline.\n\nApply: {application_url}" if application_url else "Grant deadline."
+    try:
+        service = _get_calendar_service()
+        start_date = deadline_date
+        end_date = (datetime.fromisoformat(deadline_date) + timedelta(days=1)).date().isoformat()
+        description = f"Grant deadline.\n\nApply: {application_url}" if application_url else "Grant deadline."
 
-    event = {
-        "summary": title,
-        "description": description,
-        "start": {"date": start_date, "timeZone": timezone},
-        "end": {"date": end_date, "timeZone": timezone},
-    }
+        event = {
+            "summary": title,
+            "description": description,
+            "start": {"date": start_date, "timeZone": timezone},
+            "end": {"date": end_date, "timeZone": timezone},
+        }
 
-    created = service.events().insert(calendarId="primary", body=event).execute()
-    return f"Created event: {created.get('htmlLink', '(no link returned)')}"
+        created = service.events().insert(calendarId="primary", body=event).execute()
+        return f"Created event: {created.get('htmlLink', '(no link returned)')}"
+    except Exception as e:
+        return f"Calendar event was not created: {str(e)}"
 
 
 # Combine tools and initialize Agent

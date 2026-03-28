@@ -255,7 +255,18 @@
                     body: JSON.stringify({ message: payloadMessage })
                 });
 
-                if (!response.ok) throw new Error(`HTTP Error! Status: ${response.status}`);
+                if (!response.ok) {
+                    let errorMessage = `HTTP Error! Status: ${response.status}`;
+                    try {
+                        const err = await response.json();
+                        if (err && (err.detail || err.message)) {
+                            errorMessage = err.detail || err.message;
+                        }
+                    } catch (_) {
+                        // Ignore JSON parse failures and keep fallback error message.
+                    }
+                    throw new Error(errorMessage);
+                }
                 const data = await response.json();
                 
                 loadingIndicator.style.display = 'none';
