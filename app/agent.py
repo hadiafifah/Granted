@@ -131,6 +131,7 @@ def generate_email_draft(
     context: Optional[str] = None
 ) -> str:
     """Generates an email draft for outreach."""
+    print("\n[Tool Executing] Generating Email...")
     prompt = f"""
 Write a professional, friendly outreach email draft.
 
@@ -173,6 +174,35 @@ Extra context (optional): {context or "N/A"}
 
     return f"**SUBJECT:** {subject}\n\n**BODY:**\n{body}"
 
+class SendEmailInput(BaseModel):
+    to_email: str
+    subject: str
+    body: str
+
+@tool("send_email", args_schema=SendEmailInput)
+def send_email(to_email: str, subject: str, body: str) -> Dict[str, str]:
+    """
+    Sends an email using SMTP.
+    NOTE: 
+    """
+
+    sender_email = "granted.agentic@gmail.com"
+    sender_password = "bjhk hawi hyvp hpxf"
+
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = to_email
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, msg.as_string())
+
+        return {"status": "sent", "to": to_email}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Tool 4: Google Calendar API tool
 SCOPES =["https://www.googleapis.com/auth/calendar.events"]
@@ -225,7 +255,7 @@ def create_grant_deadline_event(
 
 
 # Combine tools and initialize Agent
-tools =[search_tool, generate_email_draft, generate_grant_and_save_pdf, create_grant_deadline_event]
+tools =[search_tool, generate_email_draft, generate_grant_and_save_pdf, create_grant_deadline_event, send_email]
 
 current_year = datetime.now().year
 
@@ -241,6 +271,14 @@ You have access to these tools:
 - generate_grant_and_save_pdf: create a proposal PDF. Pass the funder details AND the user's organization/project details into this tool.
 - generate_email_draft: create an outreach email draft
 - create_grant_deadline_event: create a calendar event for a grant deadline
+- send_email: sends email drafted in generate_email_draft
+
+For each request to help with the grant process, you must follow this workflow:
+1. Use web_search to find a relevant grant and it's application deadline
+2. Use generate_grant_and_save_pdf to create the proposal PDF
+3. Generate an email using generate_email_draft
+4. Create a Calendar Event for the grant's deadline.
+5. You should finally summarize what you have done for the user. Specifically, return to the user: Summary of grant, generated proposal PDF, generated application email draft, and created calendar event.
 
 RULES:
 - Be concise and professional.
