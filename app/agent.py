@@ -30,6 +30,9 @@ print("✓ API keys configured successfully!")
 # Guardrail: all proposal emails must go to this fixed recipient.
 PROPOSAL_RECIPIENT_EMAIL = "anhadi@ucdavis.edu"
 
+def _is_env_present(name: str) -> bool:
+    return bool((os.getenv(name) or "").strip())
+
 llm = ChatGoogleGenerativeAI(model = "gemini-2.5-flash")
 
 proposal_schema =[
@@ -248,7 +251,11 @@ def send_email(
         if not sender_email or not sender_password:
             return {
                 "status": "error",
-                "message": "Missing SMTP_SENDER_EMAIL or SMTP_APP_PASSWORD in environment.",
+                "message": (
+                    "Missing SMTP_SENDER_EMAIL or SMTP_APP_PASSWORD in environment. "
+                    f"Detected env presence: SMTP_SENDER_EMAIL={_is_env_present('SMTP_SENDER_EMAIL')}, "
+                    f"SMTP_APP_PASSWORD={_is_env_present('SMTP_APP_PASSWORD')}"
+                ),
             }
 
         msg = EmailMessage()
@@ -308,10 +315,15 @@ def _get_calendar_service():
     client_json_env = os.getenv("GOOGLE_OAUTH_CLIENT_JSON")
     token_path_env = os.getenv("GOOGLE_OAUTH_TOKEN_PATH")
     client_path_env = os.getenv("GOOGLE_OAUTH_CLIENT_PATH")
+    token_json_present = _is_env_present("GOOGLE_OAUTH_TOKEN_JSON")
+    client_json_present = _is_env_present("GOOGLE_OAUTH_CLIENT_JSON")
 
     # 1) Preferred for deployment: JSON env vars
     if token_json_env:
-        creds = Credentials.from_authorized_user_info(json.loads(token_json_env), SCOPES)
+        try:
+            creds = Credentials.from_authorized_user_info(json.loads(token_json_env), SCOPES)
+        except Exception as e:
+            raise RuntimeError(f"Invalid GOOGLE_OAUTH_TOKEN_JSON format: {str(e)}")
 
     # 2) Optional path-based env vars
     if not creds and token_path_env and os.path.exists(token_path_env):
@@ -328,7 +340,10 @@ def _get_calendar_service():
             flow = None
 
             if client_json_env:
-                flow = InstalledAppFlow.from_client_config(json.loads(client_json_env), SCOPES)
+                try:
+                    flow = InstalledAppFlow.from_client_config(json.loads(client_json_env), SCOPES)
+                except Exception as e:
+                    raise RuntimeError(f"Invalid GOOGLE_OAUTH_CLIENT_JSON format: {str(e)}")
             elif client_path_env and os.path.exists(client_path_env):
                 flow = InstalledAppFlow.from_client_secrets_file(client_path_env, SCOPES)
             elif os.path.exists("credentials.json"):
@@ -337,7 +352,9 @@ def _get_calendar_service():
             if not flow:
                 raise RuntimeError(
                     "Google Calendar OAuth credentials not configured. Set GOOGLE_OAUTH_TOKEN_JSON + "
-                    "GOOGLE_OAUTH_CLIENT_JSON (recommended for deployment), or provide local credentials.json/token.json."
+                    "GOOGLE_OAUTH_CLIENT_JSON (recommended for deployment), or provide local credentials.json/token.json. "
+                    f"Detected env presence: GOOGLE_OAUTH_TOKEN_JSON={token_json_present}, "
+                    f"GOOGLE_OAUTH_CLIENT_JSON={client_json_present}"
                 )
 
             # Interactive login only for local development.
