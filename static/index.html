@@ -237,7 +237,47 @@
         function appendMessage(text, className) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${className}`;
-            messageDiv.textContent = text;
+            
+            // Check if this is an agent response containing the PDF filename
+            if (className === 'agent-message' && text.includes('Grant_Proposal_Submission.pdf')) {
+                // Add the text first
+                const textSpan = document.createElement('span');
+                textSpan.textContent = text;
+                messageDiv.appendChild(textSpan);
+                
+                // Add line breaks
+                messageDiv.appendChild(document.createElement('br'));
+                messageDiv.appendChild(document.createElement('br'));
+                
+                // Create the download button
+                const downloadBtn = document.createElement('a');
+                
+                // If API URL is customized, prepend it to the download route, otherwise use relative path
+                const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
+                downloadBtn.href = `${baseApiUrl}/download/Grant_Proposal_Submission.pdf`;
+                
+                downloadBtn.download = 'Grant_Proposal_Submission.pdf'; // Triggers browser download
+                downloadBtn.textContent = '📄 Download Grant Proposal';
+                
+                // Style the download button to match the theme
+                downloadBtn.style.display = 'inline-block';
+                downloadBtn.style.padding = '10px 15px';
+                downloadBtn.style.backgroundColor = '#ff9800';
+                downloadBtn.style.color = '#000000';
+                downloadBtn.style.textDecoration = 'none';
+                downloadBtn.style.borderRadius = '5px';
+                downloadBtn.style.fontWeight = 'bold';
+                downloadBtn.style.transition = 'background-color 0.2s';
+                
+                // Add hover effect
+                downloadBtn.onmouseover = function() { this.style.backgroundColor = '#e68a00'; }
+                downloadBtn.onmouseout = function() { this.style.backgroundColor = '#ff9800'; }
+                
+                messageDiv.appendChild(downloadBtn);
+            } else {
+                // Standard text response
+                messageDiv.textContent = text;
+            }
             
             // Insert before the loading indicator so loading always stays at bottom
             chatBox.insertBefore(messageDiv, loadingIndicator);

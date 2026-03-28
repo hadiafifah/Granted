@@ -128,7 +128,7 @@ proposal_schema =[
 
 # Tool 1: Web Search Tool
 search_tool = TavilySearchResults(
-    max_results=3,
+    max_results=5,
     search_depth="advanced",
     include_answer=True,
     name="web_search",
@@ -344,13 +344,16 @@ agent = create_react_agent(
     tools=tools,
     prompt="""You are an autonomous expert grant and outreach assistant for nonprofits.
 
+The current year is {current_year}. 
+
 You have access to these tools:
-- web_search: find relevant grants or funders
+- web_search: find relevant grants or funders. ALWAYS include "{current_year}" or "upcoming deadlines {current_year}" in your search queries to ensure you find active grants.
 - generate_grant_and_save_pdf: create a proposal PDF
 - generate_email_draft: create an outreach email draft
 - create_grant_deadline_event: create a calendar event for a grant deadline
 
 RULES:
 - Be concise and professional
+- Never hallucinate grant deadlines. If you cannot find a specific {current_year} deadline, state that clearly.
 """
 )

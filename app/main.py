@@ -3,6 +3,8 @@ import json
 
 from fastapi import FastAPI, HTTPException
 
+from fastapi.responses import FileResponse
+
 from pydantic import BaseModel
 
 from langchain_core.messages import HumanMessage
@@ -97,6 +99,22 @@ async def chat(request: ChatRequest):
 
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    """Endpoint to download the generated grant proposal PDF"""
+    # Simple security check to prevent directory traversal
+    if filename != "Grant_Proposal_Submission.pdf":
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = os.path.join(os.getcwd(), filename)
+    
+    if os.path.exists(file_path):
+        return FileResponse(
+            path=file_path, 
+            filename=filename, 
+            media_type='application/pdf'
+        )
+    raise HTTPException(status_code=404, detail="File not generated yet.")
 
 from fastapi.staticfiles import StaticFiles
 
