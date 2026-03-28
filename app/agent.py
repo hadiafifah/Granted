@@ -1,8 +1,8 @@
 import os
-import json
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
+from contextvars import ContextVar
 
 from dotenv import load_dotenv
 from fpdf import FPDF
@@ -15,8 +15,6 @@ from langgraph.prebuilt import create_react_agent
 # Google Calendar API imports
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 from datetime import timedelta
 
 load_dotenv()
@@ -37,6 +35,16 @@ proposal_schema =[
     "Budget & Funding Request",
     "Conclusion / Call to Action"
 ]
+
+# Request-scoped context set by app.main before invoking the agent.
+_CURRENT_GOOGLE_TOKEN: ContextVar[Optional[Dict]] = ContextVar("current_google_token", default=None)
+_CURRENT_GOOGLE_AUTH_URL: ContextVar[Optional[str]] = ContextVar("current_google_auth_url", default=None)
+
+
+def set_current_google_auth_context(token_info: Optional[Dict], auth_url: Optional[str]) -> None:
+    _CURRENT_GOOGLE_TOKEN.set(token_info)
+    _CURRENT_GOOGLE_AUTH_URL.set(auth_url)
+
 
 # Tool 1: Web Search Tool
 search_tool = TavilySearchResults(
@@ -59,7 +67,7 @@ def generate_grant_and_save_pdf(funder_details: str, project_details: str) -> st
     """
     print("\n[Tool Executing] Generating Proposal Sections based on found grant and provided details...")
     full_proposal = {}
-    
+
     # Generate each section utilizing the global LLM
     for section in proposal_schema:
         print(f" -> Generating: {section}")
@@ -86,11 +94,11 @@ def generate_grant_and_save_pdf(funder_details: str, project_details: str) -> st
         full_proposal[section] = response.content
 
     print("\n[Tool Executing] Formatting and saving to PDF...")
-    
+
     # Format Text
     date_str = datetime.now().strftime("%B %d, %Y")
     formatted_text = f"Grant Proposal Submission\nDate: {date_str}\n\n{'='*70}\n"
-    
+
     for title, content in full_proposal.items():
         formatted_text += f"\n\n{title.upper()}\n"
         formatted_text += "-" * len(title) + "\n\n"
@@ -110,7 +118,7 @@ def generate_grant_and_save_pdf(funder_details: str, project_details: str) -> st
 
     pdf_file_name = "Grant_Proposal_Submission.pdf"
     pdf.output(pdf_file_name)
-    
+
     return f"Success! The grant proposal has been generated and saved locally as {pdf_file_name}."
 
 
@@ -175,29 +183,21 @@ Extra context (optional): {context or "N/A"}
 
 
 # Tool 4: Google Calendar API tool
-SCOPES =["https://www.googleapis.com/auth/calendar.events"]
+SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
-def _get_calendar_service():
-    """
-    Auth priority:
-    1) GOOGLE_OAUTH_TOKEN_JSON / GOOGLE_OAUTH_CLIENT_JSON (recommended for Render)
-    2) GOOGLE_OAUTH_TOKEN_PATH / GOOGLE_OAUTH_CLIENT_PATH
-    3) token.json / credentials.json (local dev fallback)
-    """
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists("credentials.json"):
-                raise FileNotFoundError("Missing credentials.json.")
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+
+def _get_calendar_service_for_current_user():
+    token_info = _CURRENT_GOOGLE_TOKEN.get()
+    if not token_info:
+        auth_url = _CURRENT_GOOGLE_AUTH_URL.get() or "/auth/google/start"
+        raise PermissionError(
+            "Google Calendar is not connected for this user session. "
+            f"Please sign in and grant consent first: {auth_url}"
+        )
+
+    creds = Credentials.from_authorized_user_info(token_info, SCOPES)
     return build("calendar", "v3", credentials=creds)
+
 
 @tool
 def create_grant_deadline_event(
@@ -206,8 +206,12 @@ def create_grant_deadline_event(
     application_url: str = "",
     timezone: str = "America/Los_Angeles",
 ) -> str:
-    """Create an all-day Google Calendar event for a grant deadline."""
-    service = _get_calendar_service()
+    """Create an all-day Google Calendar event for a grant deadline in the signed-in user's calendar."""
+    try:
+        service = _get_calendar_service_for_current_user()
+    except PermissionError as exc:
+        return str(exc)
+
     start_date = deadline_date
     end_date = (datetime.fromisoformat(deadline_date) + timedelta(days=1)).date().isoformat()
     description = f"Grant deadline.\n\nApply: {application_url}" if application_url else "Grant deadline."
@@ -233,17 +237,18 @@ agent = create_react_agent(
     tools=tools,
     prompt=f"""You are an autonomous expert grant and outreach assistant for nonprofits.
 
-The current year is {current_year}. 
+The current year is {current_year}.
 
 You have access to these tools:
 - web_search: find relevant grants or funders. ALWAYS include "{current_year}" or "upcoming deadlines {current_year}" in your search queries to ensure you find active grants.
 - generate_grant_and_save_pdf: create a proposal PDF. Pass the funder details AND the user's organization/project details into this tool.
 - generate_email_draft: create an outreach email draft
-- create_grant_deadline_event: create a calendar event for a grant deadline
+- create_grant_deadline_event: create a calendar event for a grant deadline in the currently signed-in user's Google Calendar
 
 RULES:
 - Be concise and professional.
 - If the user provides background information or an uploaded document, use it to populate the organization and project details for your tools.
 - Never hallucinate grant deadlines. If you cannot find a specific {current_year} deadline, state that clearly.
+- If calendar tool says Google Calendar is not connected, instruct the user to complete auth and then retry.
 """
 )
