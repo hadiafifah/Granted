@@ -140,10 +140,15 @@ BODY:
 ...
 
 Rules:
-- 120-–180 words
+- 120-180 words
 - Plain language
 - Clear call-to-action
-- Use placeholders like [Your Name], [Role], [Phone], [Website]
+- Make the email specific to the organization and grant
+- Do NOT use placeholders like [Your Name], [Role], [Phone], or [Website]
+- End the email with a realistic organizational signature, not a personal placeholder
+- Use a closing like:
+  Best,
+  {org_name} Team
 
 Organization: {org_name}
 Recipient type: {recipient_type}
