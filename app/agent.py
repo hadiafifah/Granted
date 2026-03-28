@@ -1,11 +1,13 @@
 import os
 import json
+import smtplib
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
 
 from dotenv import load_dotenv
 from fpdf import FPDF
+from email.message import EmailMessage
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools.tavily_search import TavilySearchResults
@@ -24,6 +26,9 @@ load_dotenv()
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
 print("✓ API keys configured successfully!")
+
+# Guardrail: all proposal emails must go to this fixed recipient.
+PROPOSAL_RECIPIENT_EMAIL = "anhadi@ucdavis.edu"
 
 llm = ChatGoogleGenerativeAI(model = "gemini-2.5-flash")
 
@@ -122,6 +127,23 @@ class EmailDraftInput(BaseModel):
     grant_name: Optional[str] = Field(None, description="Grant/funder name if relevant")
     context: Optional[str] = Field(None, description="Any extra context to include (optional)")
 
+def _extract_subject_body_from_draft(draft_text: str) -> Dict[str, str]:
+    """Parse draft text in the expected format:
+    SUBJECT: ...
+    BODY:
+    ...
+    """
+    text = (draft_text or "").strip()
+    subject = ""
+    body = ""
+
+    if "SUBJECT:" in text:
+        subject = text.split("SUBJECT:", 1)[1].split("\n", 1)[0].strip()
+    if "BODY:" in text:
+        body = text.split("BODY:", 1)[1].strip()
+
+    return {"subject": subject, "body": body}
+
 @tool("generate_email_draft", args_schema=EmailDraftInput)
 def generate_email_draft(
     org_name: str,
@@ -131,6 +153,7 @@ def generate_email_draft(
     context: Optional[str] = None
 ) -> str:
     """Generates an email draft for outreach."""
+    print("\n[Tool Executing] Generating Email...")
     prompt = f"""
 Write a professional, friendly outreach email draft.
 
@@ -171,8 +194,103 @@ Extra context (optional): {context or "N/A"}
     print("\nBODY:\n" + body)
     print("============================================\n")
 
-    return f"**SUBJECT:** {subject}\n\n**BODY:**\n{body}"
+    return f"SUBJECT: {subject}\nBODY:\n{body}"
 
+class SendEmailInput(BaseModel):
+    to_email: str
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    draft: Optional[str] = Field(
+        None,
+        description="Optional full draft from generate_email_draft. If provided, subject/body are extracted from this.",
+    )
+    attach_proposal_pdf: Optional[bool] = Field(
+        True,
+        description="Attach the generated grant proposal PDF to the email.",
+    )
+    pdf_path: Optional[str] = Field(
+        "Grant_Proposal_Submission.pdf",
+        description="Path to the PDF file to attach when attach_proposal_pdf is true.",
+    )
+
+@tool("send_email", args_schema=SendEmailInput)
+def send_email(
+    to_email: str,
+    subject: Optional[str] = None,
+    body: Optional[str] = None,
+    draft: Optional[str] = None,
+    attach_proposal_pdf: Optional[bool] = True,
+    pdf_path: Optional[str] = "Grant_Proposal_Submission.pdf",
+) -> Dict[str, str]:
+    """
+    Sends an email using SMTP.
+    NOTE: 
+    """
+
+    try:
+        # Hard guardrail: ignore any discovered or user-provided recipient.
+        recipient_email = PROPOSAL_RECIPIENT_EMAIL
+
+        if draft and (not subject or not body):
+            parsed = _extract_subject_body_from_draft(draft)
+            subject = subject or parsed["subject"]
+            body = body or parsed["body"]
+
+        if not subject or not body:
+            return {
+                "status": "error",
+                "message": "Missing subject/body. Provide them directly or pass `draft` from generate_email_draft.",
+            }
+
+        sender_email = (os.getenv("SMTP_SENDER_EMAIL") or "").strip()
+        sender_password = (os.getenv("SMTP_APP_PASSWORD") or "").strip()
+
+        if not sender_email or not sender_password:
+            return {
+                "status": "error",
+                "message": "Missing SMTP_SENDER_EMAIL or SMTP_APP_PASSWORD in environment.",
+            }
+
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = sender_email
+        msg["To"] = recipient_email
+        msg.set_content(body)
+
+        attached_file = None
+        if attach_proposal_pdf:
+            path_to_attach = (pdf_path or "Grant_Proposal_Submission.pdf").strip()
+            if not os.path.exists(path_to_attach):
+                return {
+                    "status": "error",
+                    "message": f"Attachment not found: {path_to_attach}",
+                }
+            with open(path_to_attach, "rb") as f:
+                pdf_bytes = f.read()
+            msg.add_attachment(
+                pdf_bytes,
+                maintype="application",
+                subtype="pdf",
+                filename=os.path.basename(path_to_attach),
+            )
+            attached_file = path_to_attach
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, recipient_email, msg.as_string())
+
+        result = {
+            "status": "sent",
+            "to": recipient_email,
+            "requested_to": to_email,
+            "note": "Recipient enforced by guardrail.",
+        }
+        if attached_file:
+            result["attachment"] = attached_file
+        return result
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Tool 4: Google Calendar API tool
 SCOPES =["https://www.googleapis.com/auth/calendar.events"]
@@ -207,6 +325,7 @@ def create_grant_deadline_event(
     timezone: str = "America/Los_Angeles",
 ) -> str:
     """Create an all-day Google Calendar event for a grant deadline."""
+    print("\n[Tool Executing] Creating calendar event for grant.")
     service = _get_calendar_service()
     start_date = deadline_date
     end_date = (datetime.fromisoformat(deadline_date) + timedelta(days=1)).date().isoformat()
@@ -224,7 +343,7 @@ def create_grant_deadline_event(
 
 
 # Combine tools and initialize Agent
-tools =[search_tool, generate_email_draft, generate_grant_and_save_pdf, create_grant_deadline_event]
+tools =[search_tool, generate_email_draft, generate_grant_and_save_pdf, create_grant_deadline_event, send_email]
 
 current_year = datetime.now().year
 
@@ -240,10 +359,20 @@ You have access to these tools:
 - generate_grant_and_save_pdf: create a proposal PDF. Pass the funder details AND the user's organization/project details into this tool.
 - generate_email_draft: create an outreach email draft
 - create_grant_deadline_event: create a calendar event for a grant deadline
+- send_email: sends email drafted in generate_email_draft (recipient is always forced to anhadi@ucdavis.edu)
+
+For each request to help with the grant process, you must follow this workflow:
+1. Use web_search to find a relevant grant and it's application deadline
+2. Use generate_grant_and_save_pdf to create the proposal PDF
+3. Generate an email using generate_email_draft
+4. Pass the exact output of generate_email_draft into send_email as `draft`, and attach grant proposal PDF with the email.
+5. Create a Calendar Event for the grant's deadline.
+6. You should finally summarize what you have done for the user. Specifically, return to the user: Summary of grant, generated proposal PDF, generated application email draft, and created calendar event (and email delivery status if sent).
 
 RULES:
 - Be concise and professional.
 - If the user provides background information or an uploaded document, use it to populate the organization and project details for your tools.
 - Never hallucinate grant deadlines. If you cannot find a specific {current_year} deadline, state that clearly.
+- Do not use or trust email addresses found via web_search. For proposal outreach, always send to anhadi@ucdavis.edu.
 """
 )
