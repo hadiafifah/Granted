@@ -159,10 +159,10 @@
             </div>
         </div>
 
-        <div class="config-container">
-            <label for="api-url">API URL (Optional):</label>
-            <input type="text" id="api-url" placeholder="Leave blank for relative /chat">
-        </div>
+    <div class="config-container">
+        <label for="api-url">API URL (Optional):</label>
+        <input type="text" id="api-url" placeholder="Leave blank for relative /chat">
+        <button id="calendar-auth-btn" class="action-btn" onclick="startGoogleAuth()">Connect Google Calendar</button>
     </div>
 
     <div class="chat-box" id="chat-box">
@@ -189,12 +189,37 @@
         const apiUrlInput = document.getElementById('api-url');
         const loadingIndicator = document.getElementById('loading-indicator');
         const fileStatus = document.getElementById('file-status');
+        const calendarAuthBtn = document.getElementById('calendar-auth-btn');
 
         let uploadedContext = "";
 
         userInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
         });
+        apiUrlInput.addEventListener('change', refreshGoogleStatus);
+
+        function getBaseApiUrl() {
+            return apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
+        }
+
+        async function refreshGoogleStatus() {
+            const baseApiUrl = getBaseApiUrl();
+            try {
+                const response = await fetch(`${baseApiUrl}/auth/google/status`);
+                if (!response.ok) throw new Error('Status unavailable');
+                const data = await response.json();
+                calendarAuthBtn.textContent = data.connected ? 'Google Calendar Connected' : 'Connect Google Calendar';
+                calendarAuthBtn.disabled = !!data.connected;
+            } catch (_) {
+                calendarAuthBtn.textContent = 'Connect Google Calendar';
+                calendarAuthBtn.disabled = false;
+            }
+        }
+
+        function startGoogleAuth() {
+            const baseApiUrl = getBaseApiUrl();
+            window.location.href = `${baseApiUrl}/auth/google/start?next=/ui`;
+        }
 
         // 1. Handle File Upload
         async function handleFileUpload(event) {
@@ -207,7 +232,7 @@
             const formData = new FormData();
             formData.append("file", file);
 
-            const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
+            const baseApiUrl = getBaseApiUrl();
             const uploadUrl = `${baseApiUrl}/upload`;
 
             try {
@@ -312,7 +337,7 @@
                 messageDiv.appendChild(document.createElement('br'));
                 
                 const downloadBtn = document.createElement('a');
-                const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
+                const baseApiUrl = getBaseApiUrl();
                 
                 downloadBtn.href = `${baseApiUrl}/download/Grant_Proposal_Submission.pdf`;
                 downloadBtn.download = 'Grant_Proposal_Submission.pdf';
@@ -342,6 +367,8 @@
             chatBox.insertBefore(messageDiv, loadingIndicator);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
+
+        refreshGoogleStatus();
     </script>
 </body>
 </html>
