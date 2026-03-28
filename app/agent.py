@@ -281,28 +281,46 @@ SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
 def _get_calendar_service():
     """
-    Local dev: expects credentials.json (OAuth client) in repo, and will create token.json after you authorize once.
-    Colab: same idea, but you upload credentials.json or mount Drive.
+    Auth priority:
+    1) GOOGLE_OAUTH_TOKEN_JSON / GOOGLE_OAUTH_CLIENT_JSON (recommended for Render)
+    2) GOOGLE_OAUTH_TOKEN_PATH / GOOGLE_OAUTH_CLIENT_PATH
+    3) token.json / credentials.json (local dev fallback)
     """
     creds = None
+    token_json_env = os.getenv("GOOGLE_OAUTH_TOKEN_JSON")
+    client_json_env = os.getenv("GOOGLE_OAUTH_CLIENT_JSON")
+    token_path = os.getenv("GOOGLE_OAUTH_TOKEN_PATH", "token.json")
+    client_path = os.getenv("GOOGLE_OAUTH_CLIENT_PATH", "credentials.json")
 
-    # token.json stores the user's access/refresh tokens after first auth
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    # token stores user's access/refresh tokens after first auth
+    if token_json_env:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json_env), SCOPES)
+    elif os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not os.path.exists("credentials.json"):
-                raise FileNotFoundError(
-                    "Missing credentials.json. Download OAuth client credentials from Google Calendar API quickstart."
+            if os.getenv("RENDER"):
+                raise RuntimeError(
+                    "Google Calendar auth not initialized on Render. "
+                    "Set GOOGLE_OAUTH_TOKEN_JSON (recommended) and GOOGLE_OAUTH_CLIENT_JSON as Render env vars."
                 )
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            if client_json_env:
+                flow = InstalledAppFlow.from_client_config(json.loads(client_json_env), SCOPES)
+            elif os.path.exists(client_path):
+                flow = InstalledAppFlow.from_client_secrets_file(client_path, SCOPES)
+            else:
+                raise FileNotFoundError(
+                    "Missing OAuth client config. Set GOOGLE_OAUTH_CLIENT_JSON or provide credentials.json locally."
+                )
             creds = flow.run_local_server(port=0)
 
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+        # Persist only when using file-based auth flow (local dev)
+        if not token_json_env:
+            with open(token_path, "w") as token:
+                token.write(creds.to_json())
 
     return build("calendar", "v3", credentials=creds)
 
