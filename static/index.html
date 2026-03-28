@@ -29,7 +29,34 @@
 
         .message { max-width: 80%; padding: 12px 16px; border-radius: 8px; line-height: 1.5; word-wrap: break-word; }
         .user-message { align-self: flex-end; background-color: #ff9800; color: #000000; border-bottom-right-radius: 0; font-weight: 500; }
-        .agent-message { align-self: flex-start; background-color: #2a2a2a; color: #ffffff; border-bottom-left-radius: 0; white-space: pre-wrap; }
+        .agent-message { align-self: flex-start; background-color: #2a2a2a; color: #ffffff; border-bottom-left-radius: 0; white-space: normal; }
+        .agent-message h1, .agent-message h2, .agent-message h3, .agent-message h4 { margin: 0.5em 0; color: #ffd28a; }
+        .agent-message p { margin: 0.5em 0; }
+        .agent-message ul, .agent-message ol { margin: 0.4em 0 0.6em 1.2em; padding: 0; }
+        .agent-message pre {
+            background: #1b1b1b;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 10px;
+            overflow-x: auto;
+        }
+        .agent-message code {
+            background: #1b1b1b;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 1px 4px;
+        }
+        .agent-message pre code {
+            border: none;
+            padding: 0;
+            background: transparent;
+        }
+        .agent-message a {
+            color: #7ac7ff;
+            text-decoration: underline;
+            word-break: break-word;
+        }
+        .agent-message a:hover { color: #9ad6ff; }
         .loading-text { color: #ff9800; font-style: italic; align-self: flex-start; font-size: 0.9em; display: none; }
 
         .input-area { width: 90%; max-width: 800px; display: flex; gap: 10px; margin-bottom: 10px; }
@@ -72,6 +99,8 @@
     
     <div id="file-status"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
     <script>
         const chatBox = document.getElementById('chat-box');
         const userInput = document.getElementById('user-input');
@@ -161,14 +190,32 @@
             }
         }
 
+        function convertBareUrlsToMarkdownLinks(text) {
+            return text.replace(/(^|[\s(])((https?:\/\/[^\s)]+))/g, '$1[$2]($2)');
+        }
+
+        function renderAgentMarkdown(container, text) {
+            const markdownInput = convertBareUrlsToMarkdownLinks(text || "");
+            if (window.marked && window.DOMPurify) {
+                const html = marked.parse(markdownInput, { breaks: true, gfm: true });
+                container.innerHTML = DOMPurify.sanitize(html);
+                container.querySelectorAll('a').forEach((a) => {
+                    a.target = "_blank";
+                    a.rel = "noopener noreferrer";
+                });
+            } else {
+                container.textContent = text || "";
+            }
+        }
+
         function appendMessage(text, className) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${className}`;
             
             if (className === 'agent-message' && text.includes('Grant_Proposal_Submission.pdf')) {
-                const textSpan = document.createElement('span');
-                textSpan.textContent = text;
-                messageDiv.appendChild(textSpan);
+                const textContainer = document.createElement('div');
+                renderAgentMarkdown(textContainer, text);
+                messageDiv.appendChild(textContainer);
                 messageDiv.appendChild(document.createElement('br'));
                 messageDiv.appendChild(document.createElement('br'));
                 
@@ -193,7 +240,11 @@
                 
                 messageDiv.appendChild(downloadBtn);
             } else {
-                messageDiv.textContent = text;
+                if (className === 'agent-message') {
+                    renderAgentMarkdown(messageDiv, text);
+                } else {
+                    messageDiv.textContent = text;
+                }
             }
             
             chatBox.insertBefore(messageDiv, loadingIndicator);
