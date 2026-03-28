@@ -17,134 +17,32 @@
             height: 100vh;
         }
 
-        /* Header & Config */
-        .header {
-            margin-top: 20px;
-            text-align: center;
-        }
-        .header h1 {
-            color: #ff9800; /* Orange accent */
-            margin: 10px 0;
-        }
-        .header p {
-            color: #aaaaaa;
-            margin-top: 0;
-            font-size: 0.9em;
-        }
+        .header { margin-top: 20px; text-align: center; }
+        .header h1 { color: #ff9800; margin: 10px 0; }
+        .header p { color: #aaaaaa; margin-top: 0; font-size: 0.9em; }
         
-        .config-container {
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .config-container label {
-            font-size: 0.9em;
-            color: #ff9800;
-        }
-        .config-container input {
-            padding: 5px 10px;
-            border-radius: 4px;
-            border: 1px solid #ff9800;
-            background-color: #222;
-            color: #fff;
-            width: 250px;
-        }
+        .config-container { margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+        .config-container label { font-size: 0.9em; color: #ff9800; }
+        .config-container input { padding: 5px 10px; border-radius: 4px; border: 1px solid #ff9800; background-color: #222; color: #fff; width: 250px; }
 
-        /* Chat Layout */
-        .chat-box {
-            flex-grow: 1;
-            width: 90%;
-            max-width: 800px;
-            background-color: #121212;
-            border: 1px solid #ff9800;
-            border-radius: 8px;
-            padding: 20px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            margin-bottom: 20px;
-        }
+        .chat-box { flex-grow: 1; width: 90%; max-width: 800px; background-color: #121212; border: 1px solid #ff9800; border-radius: 8px; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
 
-        /* Message Bubbles */
-        .message {
-            max-width: 80%;
-            padding: 12px 16px;
-            border-radius: 8px;
-            line-height: 1.5;
-            word-wrap: break-word;
-        }
+        .message { max-width: 80%; padding: 12px 16px; border-radius: 8px; line-height: 1.5; word-wrap: break-word; }
+        .user-message { align-self: flex-end; background-color: #ff9800; color: #000000; border-bottom-right-radius: 0; font-weight: 500; }
+        .agent-message { align-self: flex-start; background-color: #2a2a2a; color: #ffffff; border-bottom-left-radius: 0; white-space: pre-wrap; }
+        .loading-text { color: #ff9800; font-style: italic; align-self: flex-start; font-size: 0.9em; display: none; }
+
+        .input-area { width: 90%; max-width: 800px; display: flex; gap: 10px; margin-bottom: 10px; }
+        .input-area input[type="text"] { flex-grow: 1; padding: 15px; border: none; border-radius: 8px; background-color: #ffffff; color: #000000; font-size: 16px; outline: none; }
         
-        .user-message {
-            align-self: flex-end;
-            background-color: #ff9800; /* Orange accent */
-            color: #000000;
-            border-bottom-right-radius: 0;
-            font-weight: 500;
-        }
+        .action-btn { padding: 0 25px; border: none; border-radius: 8px; background-color: #ff9800; color: #000000; font-size: 16px; font-weight: bold; cursor: pointer; transition: background-color 0.2s ease; }
+        .action-btn:hover { background-color: #e68a00; }
+        .action-btn:disabled { background-color: #663d00; color: #999; cursor: not-allowed; }
 
-        .agent-message {
-            align-self: flex-start;
-            background-color: #2a2a2a;
-            color: #ffffff;
-            border-bottom-left-radius: 0;
-            white-space: pre-wrap; /* Preserves formatting and line breaks */
-        }
+        #upload-btn { background-color: #333; color: #fff; border: 1px solid #ff9800; padding: 0 15px; }
+        #upload-btn:hover { background-color: #444; }
 
-        .loading-text {
-            color: #ff9800;
-            font-style: italic;
-            align-self: flex-start;
-            font-size: 0.9em;
-            display: none;
-        }
-
-        /* Input Area */
-        .input-area {
-            width: 90%;
-            max-width: 800px;
-            display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-        }
-        
-        .input-area input {
-            flex-grow: 1;
-            padding: 15px;
-            border: none;
-            border-radius: 8px;
-            background-color: #ffffff; /* White search bar */
-            color: #000000;
-            font-size: 16px;
-            outline: none;
-        }
-        
-        .input-area input::placeholder {
-            color: #666666;
-        }
-        
-        .input-area button {
-            padding: 0 25px;
-            border: none;
-            border-radius: 8px;
-            background-color: #ff9800; /* Orange accent */
-            color: #000000;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-
-        .input-area button:hover {
-            background-color: #e68a00;
-        }
-        
-        .input-area button:disabled {
-            background-color: #663d00;
-            color: #999;
-            cursor: not-allowed;
-        }
+        #file-status { font-size: 0.85em; color: #aaaaaa; width: 90%; max-width: 800px; text-align: left; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -160,14 +58,19 @@
     </div>
 
     <div class="chat-box" id="chat-box">
-        <div class="message agent-message">Hello! I am Granted, your nonprofit funding assistant. How can I help you discover grants or draft proposals today?</div>
+        <div class="message agent-message">Hello! I am Granted. You can type your organization details below, or click the paperclip icon to upload a document containing your project schema. How can I help you today?</div>
         <div class="loading-text" id="loading-indicator">Granted is thinking...</div>
     </div>
 
     <div class="input-area">
+        <input type="file" id="file-input" accept=".pdf,.docx" style="display: none;" onchange="handleFileUpload(event)">
+        <button id="upload-btn" class="action-btn" onclick="document.getElementById('file-input').click()" title="Upload Context Document">📎</button>
+        
         <input type="text" id="user-input" placeholder="Ask about a grant, request a proposal, or draft an email..." autocomplete="off">
-        <button id="send-btn" onclick="sendMessage()">Send</button>
+        <button id="send-btn" class="action-btn" onclick="sendMessage()">Send</button>
     </div>
+    
+    <div id="file-status"></div>
 
     <script>
         const chatBox = document.getElementById('chat-box');
@@ -175,51 +78,76 @@
         const sendBtn = document.getElementById('send-btn');
         const apiUrlInput = document.getElementById('api-url');
         const loadingIndicator = document.getElementById('loading-indicator');
+        const fileStatus = document.getElementById('file-status');
 
-        // Send message on Enter key press
+        let uploadedContext = "";
+
         userInput.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
+            if (e.key === 'Enter') sendMessage();
         });
 
+        // 1. Handle File Upload
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            fileStatus.textContent = `Uploading ${file.name}...`;
+            fileStatus.style.color = "#ff9800";
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
+            const uploadUrl = `${baseApiUrl}/upload`;
+
+            try {
+                const response = await fetch(uploadUrl, { method: 'POST', body: formData });
+                if (!response.ok) throw new Error("Upload failed");
+
+                const data = await response.json();
+                uploadedContext = data.text; // Store text secretly in memory
+                
+                fileStatus.textContent = `✓ Background document loaded: ${file.name}. This will be used for your next request.`;
+                fileStatus.style.color = '#4caf50'; // Green
+            } catch (err) {
+                fileStatus.textContent = `Error uploading file: ${err.message}`;
+                fileStatus.style.color = '#f44336'; // Red
+            }
+            event.target.value = ''; // Reset input
+        }
+
+        // 2. Handle Send Message
         async function sendMessage() {
             const message = userInput.value.trim();
             if (!message) return;
 
-            // 1. Add user message to UI
             appendMessage(message, 'user-message');
-            
-            // Clear input and disable UI while loading
             userInput.value = '';
             userInput.disabled = true;
             sendBtn.disabled = true;
             
-            // Show loading indicator and scroll to it
             chatBox.appendChild(loadingIndicator);
             loadingIndicator.style.display = 'block';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // 2. Determine URL (Fallback to '/chat')
+            // Combine user message with uploaded context if it exists
+            let payloadMessage = message;
+            if (uploadedContext) {
+                payloadMessage = `[BACKGROUND DOCUMENT INFORMATION]:\n${uploadedContext}\n\n[USER REQUEST]:\n${message}`;
+            }
+
             const apiUrl = apiUrlInput.value.trim() || '/chat';
 
-            // 3. Send POST request
             try {
                 const response = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ message: message })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: payloadMessage })
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP Error! Status: ${response.status}`);
-                }
-
+                if (!response.ok) throw new Error(`HTTP Error! Status: ${response.status}`);
                 const data = await response.json();
                 
-                // Hide loading and append Agent response
                 loadingIndicator.style.display = 'none';
                 appendMessage(data.response, 'agent-message');
 
@@ -227,7 +155,6 @@
                 loadingIndicator.style.display = 'none';
                 appendMessage("Sorry, there was an error communicating with the server: " + error.message, 'agent-message');
             } finally {
-                // Re-enable UI
                 userInput.disabled = false;
                 sendBtn.disabled = false;
                 userInput.focus();
@@ -238,28 +165,20 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${className}`;
             
-            // Check if this is an agent response containing the PDF filename
             if (className === 'agent-message' && text.includes('Grant_Proposal_Submission.pdf')) {
-                // Add the text first
                 const textSpan = document.createElement('span');
                 textSpan.textContent = text;
                 messageDiv.appendChild(textSpan);
-                
-                // Add line breaks
                 messageDiv.appendChild(document.createElement('br'));
                 messageDiv.appendChild(document.createElement('br'));
                 
-                // Create the download button
                 const downloadBtn = document.createElement('a');
-                
-                // If API URL is customized, prepend it to the download route, otherwise use relative path
                 const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
-                downloadBtn.href = `${baseApiUrl}/download/Grant_Proposal_Submission.pdf`;
                 
-                downloadBtn.download = 'Grant_Proposal_Submission.pdf'; // Triggers browser download
+                downloadBtn.href = `${baseApiUrl}/download/Grant_Proposal_Submission.pdf`;
+                downloadBtn.download = 'Grant_Proposal_Submission.pdf';
                 downloadBtn.textContent = '📄 Download Grant Proposal';
                 
-                // Style the download button to match the theme
                 downloadBtn.style.display = 'inline-block';
                 downloadBtn.style.padding = '10px 15px';
                 downloadBtn.style.backgroundColor = '#ff9800';
@@ -269,17 +188,14 @@
                 downloadBtn.style.fontWeight = 'bold';
                 downloadBtn.style.transition = 'background-color 0.2s';
                 
-                // Add hover effect
                 downloadBtn.onmouseover = function() { this.style.backgroundColor = '#e68a00'; }
                 downloadBtn.onmouseout = function() { this.style.backgroundColor = '#ff9800'; }
                 
                 messageDiv.appendChild(downloadBtn);
             } else {
-                // Standard text response
                 messageDiv.textContent = text;
             }
             
-            // Insert before the loading indicator so loading always stays at bottom
             chatBox.insertBefore(messageDiv, loadingIndicator);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
