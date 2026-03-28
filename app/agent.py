@@ -207,6 +207,7 @@ def create_grant_deadline_event(
     timezone: str = "America/Los_Angeles",
 ) -> str:
     """Create an all-day Google Calendar event for a grant deadline."""
+    print("\n[Tool Executing] Creating calendar event for grant.")
     service = _get_calendar_service()
     start_date = deadline_date
     end_date = (datetime.fromisoformat(deadline_date) + timedelta(days=1)).date().isoformat()

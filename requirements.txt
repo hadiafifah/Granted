@@ -9,6 +9,7 @@ langsmith
 chromadb
 pypdf
 python-dotenv
+python-multipart
 tavily-python 
 langchain 
 pydantic 
