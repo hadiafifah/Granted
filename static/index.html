@@ -7,9 +7,9 @@
     <style>
         /* Global Styles */
         body {
-            background-color: #000000;
-            color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #ece8e2;
+            color: #1f1f1f;
+            font-family: 'Avenir Next', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             display: flex;
             flex-direction: column;
@@ -17,209 +17,259 @@
             height: 100vh;
         }
 
-        /* Header & Config */
-        .header {
-            margin-top: 20px;
-            text-align: center;
-        }
-        .header h1 {
-            color: #ff9800; /* Orange accent */
-            margin: 10px 0;
-        }
-        .header p {
-            color: #aaaaaa;
-            margin-top: 0;
-            font-size: 0.9em;
-        }
-        
-        .config-container {
-            margin-bottom: 15px;
+        .top-nav {
+            width: 100%;
+            background: #d18b3f;
+            border-bottom: 1px solid #be7b33;
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: space-between;
+            gap: 36px;
+            padding: 24px 34px;
+            box-sizing: border-box;
+            flex-wrap: wrap;
         }
-        .config-container label {
-            font-size: 0.9em;
-            color: #ff9800;
-        }
+        .brand-block { display: flex; align-items: baseline; gap: 24px; }
+        .header { margin: 0; text-align: left; }
+        .header h1 { color: #1d1d1f; margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
+        .header p { color: #3d3024; margin: 0; font-size: 1.05em; }
+        
+        .config-container { margin: 0; display: flex; align-items: center; gap: 16px; }
+        .config-container label { font-size: 0.95em; color: #33291f; font-weight: 600; }
         .config-container input {
-            padding: 5px 10px;
-            border-radius: 4px;
-            border: 1px solid #ff9800;
-            background-color: #222;
-            color: #fff;
-            width: 250px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            border: 1px solid #bc9369;
+            background-color: #f3dfcb;
+            color: #2a2a2a;
+            width: 300px;
         }
 
-        /* Chat Layout */
         .chat-box {
             flex-grow: 1;
             width: 90%;
-            max-width: 800px;
-            background-color: #121212;
-            border: 1px solid #ff9800;
-            border-radius: 8px;
-            padding: 20px;
+            max-width: 980px;
+            background-color: #ece8e2;
+            border: none;
+            border-radius: 0;
+            padding: 22px 16px;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 16px;
             margin-bottom: 20px;
+            box-shadow: none;
         }
 
-        /* Message Bubbles */
-        .message {
-            max-width: 80%;
-            padding: 12px 16px;
-            border-radius: 8px;
-            line-height: 1.5;
-            word-wrap: break-word;
-        }
-        
+        .message { max-width: 84%; padding: 16px 20px; border-radius: 28px; line-height: 1.5; word-wrap: break-word; font-size: 17px; }
         .user-message {
             align-self: flex-end;
-            background-color: #ff9800; /* Orange accent */
-            color: #000000;
-            border-bottom-right-radius: 0;
+            background-color: #141518;
+            color: #f5f4f2;
+            border-bottom-right-radius: 12px;
             font-weight: 500;
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
         }
-
         .agent-message {
             align-self: flex-start;
-            background-color: #2a2a2a;
-            color: #ffffff;
-            border-bottom-left-radius: 0;
-            white-space: pre-wrap; /* Preserves formatting and line breaks */
+            background-color: #f4f2ef;
+            color: #222325;
+            border-bottom-left-radius: 12px;
+            border: 1px solid #ddd7cd;
+            white-space: normal;
         }
-
-        .loading-text {
-            color: #ff9800;
-            font-style: italic;
-            align-self: flex-start;
-            font-size: 0.9em;
-            display: none;
+        .agent-message h1, .agent-message h2, .agent-message h3, .agent-message h4 { margin: 0.5em 0; color: #1f1f1f; }
+        .agent-message p { margin: 0.5em 0; }
+        .agent-message ul, .agent-message ol { margin: 0.4em 0 0.6em 1.2em; padding: 0; }
+        .agent-message pre {
+            background: #ece8e2;
+            border: 1px solid #d8d0c5;
+            border-radius: 12px;
+            padding: 10px;
+            overflow-x: auto;
         }
-
-        /* Input Area */
-        .input-area {
-            width: 90%;
-            max-width: 800px;
-            display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-        }
-        
-        .input-area input {
-            flex-grow: 1;
-            padding: 15px;
-            border: none;
+        .agent-message code {
+            background: #ece8e2;
+            border: 1px solid #d8d0c5;
             border-radius: 8px;
-            background-color: #ffffff; /* White search bar */
-            color: #000000;
+            padding: 1px 4px;
+        }
+        .agent-message pre code {
+            border: none;
+            padding: 0;
+            background: transparent;
+        }
+        .agent-message a {
+            color: #1f6e56;
+            text-decoration: underline;
+            word-break: break-word;
+        }
+        .agent-message a:hover { color: #155742; }
+        .loading-text { color: #7b7265; font-style: italic; align-self: flex-start; font-size: 0.95em; display: none; }
+
+        .input-area { width: 90%; max-width: 980px; display: flex; gap: 12px; margin-bottom: 16px; }
+        .input-area input[type="text"] {
+            flex-grow: 1;
+            padding: 16px 22px;
+            border: 1px solid #d8d0c5;
+            border-radius: 24px;
+            background-color: #f3f0eb;
+            color: #2a2a2a;
             font-size: 16px;
             outline: none;
         }
+        .input-area input[type="text"]::placeholder { color: #9d9386; }
         
-        .input-area input::placeholder {
-            color: #666666;
-        }
-        
-        .input-area button {
+        .action-btn {
             padding: 0 25px;
             border: none;
-            border-radius: 8px;
-            background-color: #ff9800; /* Orange accent */
-            color: #000000;
+            border-radius: 22px;
+            background-color: #17181b;
+            color: #f4f2ef;
             font-size: 16px;
-            font-weight: bold;
+            font-weight: 600;
             cursor: pointer;
             transition: background-color 0.2s ease;
         }
+        .action-btn:hover { background-color: #1d1d1f; }
+        .action-btn:disabled { background-color: #a8a29a; color: #e9e6e0; cursor: not-allowed; }
 
-        .input-area button:hover {
-            background-color: #e68a00;
+        #upload-btn {
+            background-color: #17181b;
+            color: #f3c846;
+            border: none;
+            padding: 0 16px;
+            font-size: 20px;
+            border-radius: 22px;
         }
-        
-        .input-area button:disabled {
-            background-color: #663d00;
-            color: #999;
-            cursor: not-allowed;
-        }
+        #upload-btn:hover { background-color: #0f1012; }
+
+        #file-status { font-size: 0.9em; color: #7b7265; width: 90%; max-width: 980px; text-align: left; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>Granted</h1>
-        <p>End-to-End Grant Discovery & Proposal Assistant</p>
-    </div>
+    <div class="top-nav">
+        <div class="brand-block">
+            <div class="header">
+                <h1>Granted</h1>
+            </div>
+            <div class="header">
+                <p>End-to-End Grant Discovery & Proposal Assistant</p>
+            </div>
+        </div>
 
-    <div class="config-container">
-        <label for="api-url">API URL (Optional):</label>
-        <input type="text" id="api-url" placeholder="Leave blank for relative /chat">
+        <!-- if delete this, the upload doesn't work anymore -->
+        <div class="config-container">
+            <label for="api-url">API URL (Optional):</label>
+            <input type="text" id="api-url" placeholder="Leave blank for relative /chat">
+        </div>
     </div>
 
     <div class="chat-box" id="chat-box">
-        <div class="message agent-message">Hello! I am Granted, your nonprofit funding assistant. How can I help you discover grants or draft proposals today?</div>
+        <div class="message agent-message">Hello! I am Granted. You can type your organization details below, or click the paperclip icon to upload a document containing your project schema. How can I help you today?</div>
         <div class="loading-text" id="loading-indicator">Granted is thinking...</div>
     </div>
 
     <div class="input-area">
+        <input type="file" id="file-input" accept=".pdf,.docx" style="display: none;" onchange="handleFileUpload(event)">
+        <button id="upload-btn" class="action-btn" onclick="document.getElementById('file-input').click()" title="Upload Context Document">📎</button>
+        
         <input type="text" id="user-input" placeholder="Ask about a grant, request a proposal, or draft an email..." autocomplete="off">
-        <button id="send-btn" onclick="sendMessage()">Send</button>
+        <button id="send-btn" class="action-btn" onclick="sendMessage()">Send</button>
     </div>
+    
+    <div id="file-status"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
     <script>
         const chatBox = document.getElementById('chat-box');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
         const apiUrlInput = document.getElementById('api-url');
         const loadingIndicator = document.getElementById('loading-indicator');
+        const fileStatus = document.getElementById('file-status');
 
-        // Send message on Enter key press
+        let uploadedContext = "";
+
         userInput.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
+            if (e.key === 'Enter') sendMessage();
         });
 
+        // 1. Handle File Upload
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            fileStatus.textContent = `Uploading ${file.name}...`;
+            fileStatus.style.color = "#ff9800";
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
+            const uploadUrl = `${baseApiUrl}/upload`;
+
+            try {
+                const response = await fetch(uploadUrl, { method: 'POST', body: formData });
+                if (!response.ok) throw new Error("Upload failed");
+
+                const data = await response.json();
+                uploadedContext = data.text; // Store text secretly in memory
+                
+                fileStatus.textContent = `✓ Background document loaded: ${file.name}. This will be used for your next request.`;
+                fileStatus.style.color = '#4caf50'; // Green
+            } catch (err) {
+                fileStatus.textContent = `Error uploading file: ${err.message}`;
+                fileStatus.style.color = '#f44336'; // Red
+            }
+            event.target.value = ''; // Reset input
+        }
+
+        // 2. Handle Send Message
         async function sendMessage() {
             const message = userInput.value.trim();
             if (!message) return;
 
-            // 1. Add user message to UI
             appendMessage(message, 'user-message');
-            
-            // Clear input and disable UI while loading
             userInput.value = '';
             userInput.disabled = true;
             sendBtn.disabled = true;
             
-            // Show loading indicator and scroll to it
             chatBox.appendChild(loadingIndicator);
             loadingIndicator.style.display = 'block';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // 2. Determine URL (Fallback to '/chat')
+            // Combine user message with uploaded context if it exists
+            let payloadMessage = message;
+            if (uploadedContext) {
+                payloadMessage = `[BACKGROUND DOCUMENT INFORMATION]:\n${uploadedContext}\n\n[USER REQUEST]:\n${message}`;
+            }
+
             const apiUrl = apiUrlInput.value.trim() || '/chat';
 
-            // 3. Send POST request
             try {
                 const response = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ message: message })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: payloadMessage })
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP Error! Status: ${response.status}`);
+                    let errorMessage = `HTTP Error! Status: ${response.status}`;
+                    try {
+                        const err = await response.json();
+                        if (err && (err.detail || err.message)) {
+                            errorMessage = err.detail || err.message;
+                        }
+                    } catch (_) {
+                        // Ignore JSON parse failures and keep fallback error message.
+                    }
+                    throw new Error(errorMessage);
                 }
-
                 const data = await response.json();
                 
-                // Hide loading and append Agent response
                 loadingIndicator.style.display = 'none';
                 appendMessage(data.response, 'agent-message');
 
@@ -227,19 +277,69 @@
                 loadingIndicator.style.display = 'none';
                 appendMessage("Sorry, there was an error communicating with the server: " + error.message, 'agent-message');
             } finally {
-                // Re-enable UI
                 userInput.disabled = false;
                 sendBtn.disabled = false;
                 userInput.focus();
             }
         }
 
+        function convertBareUrlsToMarkdownLinks(text) {
+            return text.replace(/(^|[\s(])((https?:\/\/[^\s)]+))/g, '$1[$2]($2)');
+        }
+
+        function renderAgentMarkdown(container, text) {
+            const markdownInput = convertBareUrlsToMarkdownLinks(text || "");
+            if (window.marked && window.DOMPurify) {
+                const html = marked.parse(markdownInput, { breaks: true, gfm: true });
+                container.innerHTML = DOMPurify.sanitize(html);
+                container.querySelectorAll('a').forEach((a) => {
+                    a.target = "_blank";
+                    a.rel = "noopener noreferrer";
+                });
+            } else {
+                container.textContent = text || "";
+            }
+        }
+
         function appendMessage(text, className) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${className}`;
-            messageDiv.textContent = text;
             
-            // Insert before the loading indicator so loading always stays at bottom
+            if (className === 'agent-message' && text.includes('Grant_Proposal_Submission.pdf')) {
+                const textContainer = document.createElement('div');
+                renderAgentMarkdown(textContainer, text);
+                messageDiv.appendChild(textContainer);
+                messageDiv.appendChild(document.createElement('br'));
+                messageDiv.appendChild(document.createElement('br'));
+                
+                const downloadBtn = document.createElement('a');
+                const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
+                
+                downloadBtn.href = `${baseApiUrl}/download/Grant_Proposal_Submission.pdf`;
+                downloadBtn.download = 'Grant_Proposal_Submission.pdf';
+                downloadBtn.textContent = '📄 Download Grant Proposal';
+                
+                downloadBtn.style.display = 'inline-block';
+                downloadBtn.style.padding = '10px 15px';
+                downloadBtn.style.backgroundColor = '#17181b';
+                downloadBtn.style.color = '#f4f2ef';
+                downloadBtn.style.textDecoration = 'none';
+                downloadBtn.style.borderRadius = '16px';
+                downloadBtn.style.fontWeight = '600';
+                downloadBtn.style.transition = 'background-color 0.2s';
+                
+                downloadBtn.onmouseover = function() { this.style.backgroundColor = '#0f1012'; }
+                downloadBtn.onmouseout = function() { this.style.backgroundColor = '#17181b'; }
+                
+                messageDiv.appendChild(downloadBtn);
+            } else {
+                if (className === 'agent-message') {
+                    renderAgentMarkdown(messageDiv, text);
+                } else {
+                    messageDiv.textContent = text;
+                }
+            }
+            
             chatBox.insertBefore(messageDiv, loadingIndicator);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
