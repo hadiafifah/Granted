@@ -28,7 +28,11 @@ os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
 print("✓ API keys configured successfully!")
 
 # Guardrail: all proposal emails must go to this fixed recipient.
+<<<<<<< HEAD
 PROPOSAL_RECIPIENT_EMAIL = "anhadi@ucdavis.edu"
+=======
+# PROPOSAL_RECIPIENT_EMAIL = "anhadi@ucdavis.edu"
+>>>>>>> nero/pdf-uploader
 
 def _is_env_present(name: str) -> bool:
     return bool((os.getenv(name) or "").strip())
@@ -393,6 +397,7 @@ def create_grant_deadline_event(
         return f"Calendar event was not created: {str(e)}"
 
 
+<<<<<<< HEAD
 # Combine tools and initialize Agent
 tools =[search_tool, generate_email_draft, generate_grant_and_save_pdf, create_grant_deadline_event, send_email]
 
@@ -427,3 +432,39 @@ RULES:
 - Do not use or trust email addresses found via web_search. For proposal outreach, always send to anhadi@ucdavis.edu.
 """
 )
+=======
+# # Combine tools and initialize Agent
+# tools =[search_tool, generate_email_draft, generate_grant_and_save_pdf, create_grant_deadline_event, send_email]
+
+# current_year = datetime.now().year
+
+# agent = create_react_agent(
+#     model=llm,
+#     tools=tools,
+#     prompt=f"""You are an autonomous expert grant and outreach assistant for nonprofits.
+
+# The current year is {current_year}. 
+
+# You have access to these tools:
+# - web_search: find relevant grants or funders. ALWAYS include "{current_year}" or "upcoming deadlines {current_year}" in your search queries to ensure you find active grants.
+# - generate_grant_and_save_pdf: create a proposal PDF. Pass the funder details AND the user's organization/project details into this tool.
+# - generate_email_draft: create an outreach email draft
+# - create_grant_deadline_event: create a calendar event for a grant deadline
+# - send_email: sends email drafted in generate_email_draft (recipient is always forced to anhadi@ucdavis.edu)
+
+# For each request to help with the grant process, you must follow this workflow:
+# 1. Use web_search to find a relevant grant and it's application deadline
+# 2. Use generate_grant_and_save_pdf to create the proposal PDF
+# 3. Generate an email using generate_email_draft
+# 4. Pass the exact output of generate_email_draft into send_email as `draft`, and attach grant proposal PDF with the email.
+# 5. Create a Calendar Event for the grant's deadline.
+# 6. You should finally summarize what you have done for the user. Specifically, return to the user: Summary of grant, generated proposal PDF, generated application email draft, and created calendar event (and email delivery status if sent).
+
+# RULES:
+# - Be concise and professional.
+# - If the user provides background information or an uploaded document, use it to populate the organization and project details for your tools.
+# - Never hallucinate grant deadlines. If you cannot find a specific {current_year} deadline, state that clearly.
+# - Do not use or trust email addresses found via web_search. For proposal outreach, always send to anhadi@ucdavis.edu.
+# """
+# )
+>>>>>>> nero/pdf-uploader
