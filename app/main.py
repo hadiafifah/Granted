@@ -21,8 +21,8 @@ load_dotenv()
 uploaded_context = ""
 
 app = FastAPI(
-    title="AlgoRhythm Agent API",
-    description="A content creator agent powered by LangGraph",
+    title="Granted Agent API",
+    description="A grant writer agent powered by LangGraph",
     version="1.0.0"
 )
 
@@ -82,7 +82,7 @@ async def upload_document(file: UploadFile = File(...)):
 
     try:
         content = await file.read()
-        text = ""  # define text first
+        text = ""
         
         if file.filename.endswith(".pdf"):
             reader = PyPDF2.PdfReader(io.BytesIO(content))
@@ -98,7 +98,7 @@ async def upload_document(file: UploadFile = File(...)):
                 detail="Unsupported file format. Please upload PDF or DOCX."
             )
         
-        uploaded_context = text.strip()  # update global AFTER extraction
+        uploaded_context = text.strip() 
         return {"text": uploaded_context}
 
     except Exception as e:

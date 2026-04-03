@@ -94,7 +94,7 @@ ONLY return valid JSON.
     state_update = {"funder_info": data}
     return state_update
 
-# NODE 4: generate PDF
+# NODE 4: generate PDF (tool 2)
 def pdf_node(state: GrantState):
     print("[NODE] pdf_node starting...")
     result = generate_grant_and_save_pdf.invoke({
@@ -104,7 +104,7 @@ def pdf_node(state: GrantState):
     return {"proposal_pdf_path": "Grant_Proposal_Submission.pdf" if "Success" in result else None}
 
 
-# NODE 5: generate email
+# NODE 5: generate email (tool 3)
 def email_node(state: GrantState):
     print("[NODE] email_node starting...")
     draft = generate_email_draft.invoke({
@@ -116,7 +116,7 @@ def email_node(state: GrantState):
     return {"email_draft": draft}
 
 
-# NODE 6: send email
+# NODE 6: send email (tool 3)
 def send_node(state: GrantState):
     print("[NODE] send_node starting...")
     result = send_email.invoke({
@@ -127,7 +127,7 @@ def send_node(state: GrantState):
     return {"email_result": result}
 
 
-# NODE 7: calendar event
+# NODE 7: calendar event (tool 4)
 def calendar_node(state: GrantState):
     print("[NODE] calendar_node starting...")
     deadline = state.get("funder_info", {}).get("deadline")
@@ -171,7 +171,7 @@ CALENDAR
     return {"final_summary": summary.strip()}
 
 
-# BUILD GRAPH!
+# BUILD GRAPH
 builder = StateGraph(GrantState)
 
 builder.add_node("parse", parse_project_node)
