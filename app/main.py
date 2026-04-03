@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from app.google_user_utils import get_connected_user_email
 
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
