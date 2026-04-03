@@ -1,3 +1,4 @@
+
 import os
 import json
 import smtplib
@@ -309,7 +310,10 @@ def send_email(
         return {"status": "error", "message": str(e)}
 
 # Tool 4: Google Calendar API tool
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 
 
 def _get_calendar_service_for_current_user():
