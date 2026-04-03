@@ -2,14 +2,17 @@
 import os
 import json
 import smtplib
+import base64
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
+
 from contextvars import ContextVar
 
 from dotenv import load_dotenv
 from fpdf import FPDF
 from email.message import EmailMessage
+from app.google_user_utils import get_connected_user_email
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools.tavily_search import TavilySearchResults
@@ -236,13 +239,20 @@ def send_email(
     pdf_path: Optional[str] = "Grant_Proposal_Submission.pdf",
 ) -> Dict[str, str]:
     """
-    Sends an email using SMTP.
-    NOTE: 
+    Sends an email using the connected user's Gmail account via Gmail API.
     """
 
     try:
-        # Hard guardrail: ignore any discovered or user-provided recipient.
-        recipient_email = PROPOSAL_RECIPIENT_EMAIL
+        # Hard guardrail: send only to the currently connected user's own email.
+        token_info = _CURRENT_GOOGLE_TOKEN.get()
+
+        if not token_info:
+            return {
+                "status": "error",
+                "message": "User has not connected Google account."
+            }
+
+        recipient_email = get_connected_user_email(token_info)
 
         if draft and (not subject or not body):
             parsed = _extract_subject_body_from_draft(draft)
@@ -255,26 +265,14 @@ def send_email(
                 "message": "Missing subject/body. Provide them directly or pass `draft` from generate_email_draft.",
             }
 
-        sender_email = (os.getenv("SMTP_SENDER_EMAIL") or "").strip()
-        sender_password = (os.getenv("SMTP_APP_PASSWORD") or "").strip()
-
-        if not sender_email or not sender_password:
-            return {
-                "status": "error",
-                "message": (
-                    "Missing SMTP_SENDER_EMAIL or SMTP_APP_PASSWORD in environment. "
-                    f"Detected env presence: SMTP_SENDER_EMAIL={_is_env_present('SMTP_SENDER_EMAIL')}, "
-                    f"SMTP_APP_PASSWORD={_is_env_present('SMTP_APP_PASSWORD')}"
-                ),
-            }
+        creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+        gmail_service = build("gmail", "v1", credentials=creds)
 
         msg = EmailMessage()
         msg["Subject"] = subject
-        msg["From"] = sender_email
         msg["To"] = recipient_email
         msg.set_content(body)
 
-        attached_file = None
         if attach_proposal_pdf:
             path_to_attach = (pdf_path or "Grant_Proposal_Submission.pdf").strip()
             if not os.path.exists(path_to_attach):
@@ -290,20 +288,25 @@ def send_email(
                 subtype="pdf",
                 filename=os.path.basename(path_to_attach),
             )
-            attached_file = path_to_attach
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient_email, msg.as_string())
+        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+
+        sent = (
+            gmail_service.users()
+            .messages()
+            .send(userId="me", body={"raw": raw_message})
+            .execute()
+        )
 
         result = {
             "status": "sent",
             "to": recipient_email,
             "requested_to": to_email,
-            "note": "Recipient enforced by guardrail.",
+            "message_id": sent.get("id"),
+            "note": "Recipient enforced by guardrail and sent via connected user's Gmail.",
         }
-        if attached_file:
-            result["attachment"] = attached_file
+        if attach_proposal_pdf:
+            result["attachment"] = pdf_path
         return result
 
     except Exception as e:
@@ -313,8 +316,9 @@ def send_email(
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/gmail.send",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
 ]
-
 
 def _get_calendar_service_for_current_user():
     token_info = _CURRENT_GOOGLE_TOKEN.get()
@@ -374,7 +378,7 @@ You have access to these tools:
 - generate_grant_and_save_pdf: create a proposal PDF. Pass the funder details AND the user's organization/project details into this tool.
 - generate_email_draft: create an outreach email draft
 - create_grant_deadline_event: create a calendar event for a grant deadline
-- send_email: sends email drafted in generate_email_draft (recipient is always forced to anhadi@ucdavis.edu)
+- send_email: sends email drafted in generate_email_draft to the currently connected user's own email using Gmail API
 
 For each request to help with the grant process, you must follow this workflow:
 1. Use web_search to find a relevant grant and it's application deadline
@@ -389,6 +393,6 @@ RULES:
 - If the user provides background information or an uploaded document, use it to populate the organization and project details for your tools.
 - Never hallucinate grant deadlines. If you cannot find a specific {current_year} deadline, state that clearly.
 - If calendar tool says Google Calendar is not connected, instruct the user to complete auth and then retry.
-- Do not use or trust email addresses found via web_search. For proposal outreach, always send to anhadi@ucdavis.edu.
+- Do not use or trust email addresses found via web_search. Always send the email only to the currently connected user's own email.
 """
 )
