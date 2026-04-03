@@ -1,3 +1,5 @@
+# --- START OF FILE main.py ---
+
 import os
 import json
 import io
@@ -11,10 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from pydantic import BaseModel
+from typing import Optional
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
-from app.agent import agent
+# Ensure we import the context variable we just created!
+from app.agent import agent, user_access_token
 
 load_dotenv()
 
@@ -33,6 +37,7 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str
+    access_token: Optional[str] = None  # Receives token from frontend
 
 class ChatResponse(BaseModel):
     response: str
@@ -62,6 +67,12 @@ async def health_check():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
+        # Assign the access token to the context variable for the tools to use!
+        if request.access_token:
+            user_access_token.set(request.access_token)
+        else:
+            user_access_token.set(None)
+
         result = agent.invoke({
             "messages": [HumanMessage(content=request.message)]
         })
@@ -102,3 +113,5 @@ async def download_file(filename: str):
     raise HTTPException(status_code=404, detail="File not generated yet.")
 
 app.mount("/ui", StaticFiles(directory="static", html=True), name="static")
+
+# --- END OF FILE main.py ---

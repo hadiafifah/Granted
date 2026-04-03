@@ -1,9 +1,15 @@
+<!-- --- START OF FILE index.html --- -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Granted - Grant Assistant</title>
+    
+    <!-- Google Identity Services for OAuth -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    
     <style>
         /* Global Styles */
         body {
@@ -34,7 +40,7 @@
         .header h1 { color: #1d1d1f; margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
         .header p { color: #3d3024; margin: 0; font-size: 1.05em; }
         
-        .config-container { margin: 0; display: flex; align-items: center; gap: 16px; }
+        .config-container { margin: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;}
         .config-container label { font-size: 0.95em; color: #33291f; font-weight: 600; }
         .config-container input {
             padding: 8px 12px;
@@ -42,7 +48,7 @@
             border: 1px solid #bc9369;
             background-color: #f3dfcb;
             color: #2a2a2a;
-            width: 300px;
+            width: 200px;
         }
 
         .chat-box {
@@ -145,6 +151,7 @@
         #upload-btn:hover { background-color: #0f1012; }
 
         #file-status { font-size: 0.9em; color: #7b7265; width: 90%; max-width: 980px; text-align: left; margin-bottom: 10px; }
+        #auth-status { font-size: 0.9em; font-weight: bold; color: #3d3024; margin-left: 10px; }
     </style>
 </head>
 <body>
@@ -160,8 +167,10 @@
         </div>
 
         <div class="config-container">
-            <label for="api-url">API URL (Optional):</label>
-            <input type="text" id="api-url" placeholder="Leave blank for relative /chat">
+            <input type="text" id="api-url" placeholder="API URL (blank for relative)">
+            <input type="text" id="google-client-id" placeholder="Google Client ID">
+            <button class="action-btn" style="padding: 8px 18px; font-size: 14px;" onclick="initGoogleAuth()">Sign in to Google</button>
+            <span id="auth-status">Not Signed In</span>
         </div>
     </div>
 
@@ -189,14 +198,41 @@
         const apiUrlInput = document.getElementById('api-url');
         const loadingIndicator = document.getElementById('loading-indicator');
         const fileStatus = document.getElementById('file-status');
+        const authStatus = document.getElementById('auth-status');
 
         let uploadedContext = "";
+        let googleAccessToken = null;
+        let tokenClient;
+
+        // Initialize Google Identity Services
+        function initGoogleAuth() {
+            const clientId = document.getElementById('google-client-id').value.trim();
+            if (!clientId) {
+                alert("Please enter your Google Client ID first.");
+                return;
+            }
+
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                // Requesting both Gmail Send and Calendar Events scopes
+                scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events',
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        googleAccessToken = tokenResponse.access_token;
+                        authStatus.textContent = "✓ Signed In";
+                        authStatus.style.color = "#155742";
+                    }
+                },
+            });
+            
+            // Triggers the popup
+            tokenClient.requestAccessToken();
+        }
 
         userInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
         });
 
-        // 1. Handle File Upload
         async function handleFileUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -215,18 +251,17 @@
                 if (!response.ok) throw new Error("Upload failed");
 
                 const data = await response.json();
-                uploadedContext = data.text; // Store text secretly in memory
+                uploadedContext = data.text; 
                 
                 fileStatus.textContent = `✓ Background document loaded: ${file.name}. This will be used for your next request.`;
-                fileStatus.style.color = '#4caf50'; // Green
+                fileStatus.style.color = '#4caf50'; 
             } catch (err) {
                 fileStatus.textContent = `Error uploading file: ${err.message}`;
-                fileStatus.style.color = '#f44336'; // Red
+                fileStatus.style.color = '#f44336'; 
             }
-            event.target.value = ''; // Reset input
+            event.target.value = ''; 
         }
 
-        // 2. Handle Send Message
         async function sendMessage() {
             const message = userInput.value.trim();
             if (!message) return;
@@ -240,7 +275,6 @@
             loadingIndicator.style.display = 'block';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Combine user message with uploaded context if it exists
             let payloadMessage = message;
             if (uploadedContext) {
                 payloadMessage = `[BACKGROUND DOCUMENT INFORMATION]:\n${uploadedContext}\n\n[USER REQUEST]:\n${message}`;
@@ -252,7 +286,10 @@
                 const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: payloadMessage })
+                    body: JSON.stringify({ 
+                        message: payloadMessage,
+                        access_token: googleAccessToken // Passing the user's token directly to backend!
+                    })
                 });
 
                 if (!response.ok) {
@@ -262,9 +299,7 @@
                         if (err && (err.detail || err.message)) {
                             errorMessage = err.detail || err.message;
                         }
-                    } catch (_) {
-                        // Ignore JSON parse failures and keep fallback error message.
-                    }
+                    } catch (_) {}
                     throw new Error(errorMessage);
                 }
                 const data = await response.json();
@@ -345,3 +380,5 @@
     </script>
 </body>
 </html>
+
+<!-- --- END OF FILE index.html --- -->
