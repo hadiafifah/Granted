@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Granted - Grant Assistant</title>
     <style>
-        /* Global Styles */
+        /* ── Base ── */
+        *, *::before, *::after { box-sizing: border-box; }
         body {
             background-color: #ece8e2;
             color: #1f1f1f;
@@ -14,9 +15,10 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
         }
 
+        /* ── Nav ── */
         .top-nav {
             width: 100%;
             background: #d18b3f;
@@ -26,321 +28,526 @@
             justify-content: space-between;
             gap: 36px;
             padding: 24px 34px;
-            box-sizing: border-box;
             flex-wrap: wrap;
         }
         .brand-block { display: flex; align-items: baseline; gap: 24px; }
-        .header { margin: 0; text-align: left; }
+        .header { margin: 0; }
         .header h1 { color: #1d1d1f; margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
-        .header p { color: #3d3024; margin: 0; font-size: 1.05em; }
-        
+        .header p  { color: #3d3024; margin: 0; font-size: 1.05em; }
         .config-container { margin: 0; display: flex; align-items: center; gap: 16px; }
         .config-container label { font-size: 0.95em; color: #33291f; font-weight: 600; }
         .config-container input {
-            padding: 8px 12px;
-            border-radius: 12px;
-            border: 1px solid #bc9369;
-            background-color: #f3dfcb;
-            color: #2a2a2a;
-            width: 300px;
+            padding: 8px 12px; border-radius: 12px;
+            border: 1px solid #bc9369; background-color: #f3dfcb;
+            color: #2a2a2a; width: 300px; outline: none;
         }
 
-        .chat-box {
-            flex-grow: 1;
-            width: 90%;
-            max-width: 980px;
-            background-color: #ece8e2;
-            border: none;
-            border-radius: 0;
-            padding: 22px 16px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            margin-bottom: 20px;
-            box-shadow: none;
+        /* ── Main container ── */
+        .main-content {
+            width: 100%;
+            max-width: 1600px;
+            margin: 40px auto;
+            padding: 0 40px;
         }
 
-        .message { max-width: 84%; padding: 16px 20px; border-radius: 28px; line-height: 1.5; word-wrap: break-word; font-size: 17px; }
-        .user-message {
-            align-self: flex-end;
-            background-color: #141518;
-            color: #f5f4f2;
-            border-bottom-right-radius: 12px;
-            font-weight: 500;
-            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
-        }
-        .agent-message {
-            align-self: flex-start;
-            background-color: #f4f2ef;
-            color: #222325;
-            border-bottom-left-radius: 12px;
-            border: 1px solid #ddd7cd;
-            white-space: normal;
-        }
-        .agent-message h1, .agent-message h2, .agent-message h3, .agent-message h4 { margin: 0.5em 0; color: #1f1f1f; }
-        .agent-message p { margin: 0.5em 0; }
-        .agent-message ul, .agent-message ol { margin: 0.4em 0 0.6em 1.2em; padding: 0; }
-        .agent-message pre {
-            background: #ece8e2;
+        /* ── Card ── */
+        .card {
+            background-color: #fcfbfa;
             border: 1px solid #d8d0c5;
-            border-radius: 12px;
-            padding: 10px;
-            overflow-x: auto;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 4px 20px rgba(0,0,0,.04);
         }
-        .agent-message code {
-            background: #ece8e2;
-            border: 1px solid #d8d0c5;
-            border-radius: 8px;
-            padding: 1px 4px;
-        }
-        .agent-message pre code {
-            border: none;
-            padding: 0;
-            background: transparent;
-        }
-        .agent-message a {
-            color: #1f6e56;
-            text-decoration: underline;
-            word-break: break-word;
-        }
-        .agent-message a:hover { color: #155742; }
-        .loading-text { color: #7b7265; font-style: italic; align-self: flex-start; font-size: 0.95em; display: none; }
+        .card-header { margin-bottom: 30px; }
+        .card-header h2 { margin: 0 0 8px; color: #1d1d1f; font-size: 24px; }
+        .card-header p  { margin: 0; color: #5a5146; font-size: 15px; }
 
-        .input-area { width: 90%; max-width: 980px; display: flex; gap: 12px; margin-bottom: 16px; }
-        .input-area input[type="text"] {
-            flex-grow: 1;
-            padding: 16px 22px;
-            border: 1px solid #d8d0c5;
-            border-radius: 24px;
-            background-color: #f3f0eb;
-            color: #2a2a2a;
-            font-size: 16px;
-            outline: none;
+        /* ── Form ── */
+        .form-group { margin-bottom: 24px; }
+        .form-group label { display: block; font-weight: 600; color: #33291f; font-size: 15px; margin-bottom: 8px; }
+        .form-group input, .form-group textarea {
+            width: 100%; padding: 14px 16px;
+            border: 1px solid #d8d0c5; border-radius: 12px;
+            background-color: #f3f0eb; color: #2a2a2a;
+            font-size: 16px; font-family: inherit; outline: none;
+            transition: border-color .2s, background-color .2s;
         }
-        .input-area input[type="text"]::placeholder { color: #9d9386; }
-        
+        .form-group input:focus, .form-group textarea:focus {
+            border-color: #d18b3f; background-color: #fff;
+        }
+        .form-group textarea { resize: vertical; min-height: 100px; }
+
+        /* ── Buttons ── */
         .action-btn {
-            padding: 0 25px;
-            border: none;
-            border-radius: 22px;
-            background-color: #17181b;
-            color: #f4f2ef;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
+            width: 100%; padding: 18px 24px; border: none;
+            border-radius: 28px; background-color: #17181b;
+            color: #f4f2ef; font-size: 18px; font-weight: 600;
+            cursor: pointer; transition: background-color .2s, transform .1s;
         }
-        .action-btn:hover { background-color: #1d1d1f; }
-        .action-btn:disabled { background-color: #a8a29a; color: #e9e6e0; cursor: not-allowed; }
-
-        #upload-btn {
-            background-color: #17181b;
-            color: #f3c846;
-            border: none;
-            padding: 0 16px;
-            font-size: 20px;
-            border-radius: 22px;
+        .action-btn:hover   { background-color: #2c2d30; }
+        .action-btn:active  { transform: scale(.98); }
+        .action-btn:disabled { background-color: #a8a29a; cursor: not-allowed; transform: none; }
+        .secondary-btn {
+            background-color: transparent; color: #17181b;
+            border: 1px solid #17181b; margin-top: 16px;
         }
-        #upload-btn:hover { background-color: #0f1012; }
+        .secondary-btn:hover { background-color: #eae6df; color: #17181b; }
 
-        #file-status { font-size: 0.9em; color: #7b7265; width: 90%; max-width: 980px; text-align: left; margin-bottom: 10px; }
+        /* ── Live-progress panel ── */
+        #loading-container { display: none; }
+
+        .progress-header {
+            display: flex; align-items: center; gap: 14px; margin-bottom: 28px;
+        }
+        .progress-header h2 { margin: 0; font-size: 22px; color: #1d1d1f; }
+
+        .spinner {
+            width: 22px; height: 22px; border-radius: 50%;
+            border: 3px solid #d8d0c5;
+            border-top-color: #d18b3f;
+            animation: spin .75s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Step list */
+        .step-list { display: flex; flex-direction: column; gap: 10px; }
+
+        .step {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 14px 18px; border-radius: 12px;
+            background: #f3f0eb; border: 1px solid #e2ddd6;
+            transition: background .25s, border-color .25s;
+            opacity: 0.45;
+        }
+        .step.active  { opacity: 1; background: #fff8f0; border-color: #d18b3f; }
+        .step.done    { opacity: 1; background: #f4faf6; border-color: #7ec8a0; }
+        .step.error   { opacity: 1; background: #fff4f4; border-color: #e88; }
+
+        .step-icon {
+            width: 22px; height: 22px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; flex-shrink: 0; margin-top: 1px;
+            background: #d8d0c5; color: #fff;
+            transition: background .25s;
+        }
+        .step.active .step-icon { background: #d18b3f; animation: pulse 1.2s ease-in-out infinite; }
+        .step.done  .step-icon  { background: #4caf7d; }
+        .step.error .step-icon  { background: #e55; }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(209,139,63,.4); }
+            50%       { box-shadow: 0 0 0 6px rgba(209,139,63,0); }
+        }
+
+        .step-body { flex: 1; }
+        .step-label { font-weight: 600; font-size: 15px; color: #1d1d1f; }
+        .step-sub   { font-size: 13px; color: #7b7265; margin-top: 3px; }
+
+        /* Section progress (inside PDF step) */
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .section-chip {
+            padding: 7px 12px; border-radius: 8px;
+            font-size: 13px; font-weight: 500;
+            background: #ece8e2; color: #7b7265;
+            border: 1px solid #d8d0c5;
+            transition: all .25s;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .section-chip.writing { background: #fff8f0; color: #b86b1a; border-color: #d18b3f; }
+        .section-chip.done    { background: #f4faf6; color: #2d7a51; border-color: #7ec8a0; }
+        .section-chip .chip-icon { font-size: 11px; }
+
+        /* ── Result ── */
+        #result-container { display: none; }
+        .markdown-body { line-height: 1.6; font-size: 16px; color: #222325; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { color: #1f1f1f; margin-top: 1.5em; }
+        .markdown-body a { color: #1f6e56; text-decoration: underline; }
+
+        .pdf-section { margin-top: 32px; border-top: 1px solid #d8d0c5; padding-top: 28px; }
+        .pdf-section h3 { margin: 0 0 16px; font-size: 18px; color: #1d1d1f; }
+        .pdf-viewer { width: 100%; height: 700px; border: 1px solid #d8d0c5; border-radius: 12px; background: #f0ece6; }
+        .pdf-actions { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+        .download-btn {
+            display: inline-block; padding: 12px 22px;
+            background-color: #17181b; color: #f4f2ef !important;
+            text-decoration: none !important; border-radius: 20px;
+            font-size: 15px; font-weight: 600; transition: background-color .2s;
+        }
+        .download-btn:hover { background-color: #2c2d30; }
+        .open-btn {
+            display: inline-block; padding: 12px 22px;
+            background-color: transparent; color: #17181b !important;
+            text-decoration: none !important; border: 1px solid #17181b;
+            border-radius: 20px; font-size: 15px; font-weight: 600;
+            transition: background-color .2s;
+        }
+        .open-btn:hover { background-color: #eae6df; }
     </style>
 </head>
 <body>
 
-    <div class="top-nav">
-        <div class="brand-block">
-            <div class="header">
-                <h1>Granted</h1>
-            </div>
-            <div class="header">
-                <p>End-to-End Grant Discovery & Proposal Assistant</p>
-            </div>
-        </div>
-
+<div class="top-nav">
+    <div class="brand-block">
+        <div class="header"><h1>Granted</h1></div>
+        <div class="header"><p>End-to-End Grant Discovery &amp; Proposal Assistant</p></div>
+    </div>
     <div class="config-container">
         <label for="api-url">API URL (Optional):</label>
-        <input type="text" id="api-url" placeholder="Leave blank for relative /chat">
+        <input type="text" id="api-url" placeholder="Leave blank for relative /submit-stream">
+    </div>
+</div>
+
+<div class="main-content">
+
+    <!-- FORM -->
+    <div class="card" id="form-container">
+        <div class="card-header">
+            <h2>Project Information</h2>
+            <p>Provide your organization and project details to discover grants and generate a tailored proposal.</p>
+        </div>
+        <div class="form-group">
+            <label for="org_name">Organization Name</label>
+            <input type="text" id="org_name" placeholder="e.g. Green Earth Initiative" required>
+        </div>
+        <div class="form-group">
+            <label for="mission">Mission Statement</label>
+            <textarea id="mission" placeholder="What is the core purpose of your organization?" required></textarea>
+        </div>
+        <div class="form-group">
+            <label for="goals">Project Goals &amp; Objectives</label>
+            <textarea id="goals" placeholder="Detail what you hope to achieve with this specific project…" required></textarea>
+        </div>
+        <div class="form-group">
+            <label for="budget">Project Budget</label>
+            <input type="text" id="budget" placeholder="e.g. $50,000 for materials and staffing" required>
+        </div>
+        <div class="form-group">
+            <label for="timeline">Project Timeline</label>
+            <input type="text" id="timeline" placeholder="e.g. 12 months starting January 2025" required>
+        </div>
+        <button id="submit-btn" class="action-btn" onclick="submitForm()">Find Grants &amp; Generate Proposal</button>
     </div>
 
-    <div class="chat-box" id="chat-box">
-        <div class="message agent-message">Hello! I am Granted. You can type your organization details below, or click the paperclip icon to upload a document containing your project schema. How can I help you today?</div>
-        <div class="loading-text" id="loading-indicator">Granted is thinking...</div>
+    <!-- LIVE PROGRESS -->
+    <div id="loading-container" class="card">
+        <div class="progress-header">
+            <div class="spinner" id="main-spinner"></div>
+            <h2 id="progress-title">Working on your proposal…</h2>
+        </div>
+
+        <div class="step-list" id="step-list">
+            <!-- steps injected by JS -->
+        </div>
     </div>
 
-    <div class="input-area">
-        <input type="file" id="file-input" accept=".pdf,.docx" style="display: none;" onchange="handleFileUpload(event)">
-        <button id="upload-btn" class="action-btn" onclick="document.getElementById('file-input').click()" title="Upload Context Document">📎</button>
-        
-        <input type="text" id="user-input" placeholder="Ask about a grant, request a proposal, or draft an email..." autocomplete="off">
-        <button id="send-btn" class="action-btn" onclick="sendMessage()">Send</button>
+    <!-- RESULTS -->
+    <div id="result-container" class="card">
+        <div class="card-header"><h2>Generated Proposal Summary</h2></div>
+        <div id="result-content" class="markdown-body"></div>
+        <button class="action-btn secondary-btn" onclick="resetForm()">Start Another Proposal</button>
     </div>
-    
-    <div id="file-status"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-    <script>
-        const chatBox = document.getElementById('chat-box');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const apiUrlInput = document.getElementById('api-url');
-        const loadingIndicator = document.getElementById('loading-indicator');
-        const fileStatus = document.getElementById('file-status');
+</div>
 
-        let uploadedContext = "";
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script>
+// ── Step definitions ──────────────────────────────────────────────────────────
+const STEPS = [
+    { id: 'parse',    icon: '📋', label: 'Parse project details',         sub: 'Reading your organization info' },
+    { id: 'search',   icon: '🔍', label: 'Search for active grants',       sub: 'Scanning the web for opportunities' },
+    { id: 'extract',  icon: '🎯', label: 'Identify best-matching grant',   sub: 'Analysing results' },
+    { id: 'pdf',      icon: '📝', label: 'Generate proposal sections',     sub: 'Writing all 8 sections of your proposal' },
+    { id: 'email',    icon: '✉️',  label: 'Draft outreach email',           sub: 'Crafting a personalised email' },
+    { id: 'send',     icon: '📤', label: 'Send outreach email',            sub: 'Delivering via SMTP' },
+    { id: 'calendar', icon: '📅', label: 'Create calendar deadline event', sub: 'Adding to Google Calendar' },
+    { id: 'summary',  icon: '✅', label: 'Build final summary',            sub: 'Assembling results' },
+];
 
-        userInput.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') sendMessage();
+const PROPOSAL_SECTIONS = [
+    "Executive Summary",
+    "Problem Statement / Needs Assessment",
+    "Project Goals & Objectives",
+    "Methodology / Activities / Timeline",
+    "Evaluation Plan & Success Metrics",
+    "Team Background",
+    "Budget & Funding Request",
+    "Conclusion / Call to Action",
+];
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const formContainer    = document.getElementById('form-container');
+const loadingContainer = document.getElementById('loading-container');
+const resultContainer  = document.getElementById('result-container');
+const resultContent    = document.getElementById('result-content');
+const stepList         = document.getElementById('step-list');
+const mainSpinner      = document.getElementById('main-spinner');
+const progressTitle    = document.getElementById('progress-title');
+
+// ── Build step rows ───────────────────────────────────────────────────────────
+function buildSteps() {
+    stepList.innerHTML = '';
+    STEPS.forEach(s => {
+        const el = document.createElement('div');
+        el.className = 'step';
+        el.id = `step-${s.id}`;
+        el.innerHTML = `
+            <div class="step-icon" id="icon-${s.id}">${s.icon}</div>
+            <div class="step-body">
+                <div class="step-label" id="label-${s.id}">${s.label}</div>
+                <div class="step-sub"   id="sub-${s.id}">${s.sub}</div>
+                <div id="extra-${s.id}"></div>
+            </div>`;
+        stepList.appendChild(el);
+    });
+
+    // Pre-build section chips inside the pdf step
+    const extraPdf = document.getElementById('extra-pdf');
+    const grid = document.createElement('div');
+    grid.className = 'section-grid';
+    grid.id = 'section-grid';
+    PROPOSAL_SECTIONS.forEach(sec => {
+        const chip = document.createElement('div');
+        chip.className = 'section-chip';
+        chip.id = `chip-${secId(sec)}`;
+        chip.innerHTML = `<span class="chip-icon">○</span> ${sec}`;
+        grid.appendChild(chip);
+    });
+    extraPdf.appendChild(grid);
+}
+
+function secId(name) {
+    return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+}
+
+// ── Step state helpers ────────────────────────────────────────────────────────
+function setStepActive(nodeId) {
+    const el = document.getElementById(`step-${nodeId}`);
+    if (el) {
+        el.classList.add('active');
+        el.classList.remove('done', 'error');
+        document.getElementById(`icon-${nodeId}`).textContent = '⏳';
+    }
+}
+function setStepDone(nodeId, labelOverride) {
+    const el = document.getElementById(`step-${nodeId}`);
+    if (el) {
+        el.classList.remove('active');
+        el.classList.add('done');
+        document.getElementById(`icon-${nodeId}`).textContent = '✓';
+        if (labelOverride) document.getElementById(`label-${nodeId}`).textContent = labelOverride;
+    }
+}
+function setStepSub(nodeId, text) {
+    const sub = document.getElementById(`sub-${nodeId}`);
+    if (sub) sub.textContent = text;
+}
+
+// ── Section chip helpers ──────────────────────────────────────────────────────
+function setSectionWriting(name) {
+    const chip = document.getElementById(`chip-${secId(name)}`);
+    if (chip) {
+        chip.className = 'section-chip writing';
+        chip.innerHTML = `<span class="chip-icon">✏️</span> ${name}`;
+    }
+}
+function setSectionDone(name) {
+    const chip = document.getElementById(`chip-${secId(name)}`);
+    if (chip) {
+        chip.className = 'section-chip done';
+        chip.innerHTML = `<span class="chip-icon">✓</span> ${name}`;
+    }
+}
+
+// ── SSE event dispatcher ──────────────────────────────────────────────────────
+function handleEvent(evt) {
+    const d = evt;
+
+    if (d.type === 'node_start') {
+        // pdf_save is a sub-step of pdf, don't create a new row
+        const nodeId = d.node === 'pdf_save' ? 'pdf' : d.node;
+        setStepActive(nodeId);
+        setStepSub(nodeId, d.label || '');
+        progressTitle.textContent = d.label || 'Working…';
+    }
+
+    if (d.type === 'node_done') {
+        const nodeId = d.node === 'pdf_save' ? 'pdf' : d.node;
+        if (d.node !== 'pdf_save') {          // wait for pdf_save to mark pdf done
+            setStepDone(nodeId, d.label);
+        }
+        if (d.funder) setStepSub('extract', `Funder: ${d.funder}` + (d.deadline ? ` · Deadline: ${d.deadline}` : ''));
+    }
+
+    if (d.type === 'section_start') {
+        setSectionWriting(d.section);
+        setStepSub('pdf', `Writing: ${d.section}`);
+    }
+
+    if (d.type === 'section_done') {
+        setSectionDone(d.section);
+    }
+
+    if (d.type === 'final') {
+        // All done — hide spinner, show results
+        mainSpinner.style.display = 'none';
+        progressTitle.textContent = 'Proposal complete!';
+        setTimeout(() => {
+            loadingContainer.style.display = 'none';
+            resultContainer.style.display  = 'block';
+            renderResult(d.summary);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 600);
+    }
+
+    if (d.type === 'error') {
+        progressTitle.textContent = 'An error occurred.';
+        mainSpinner.style.display = 'none';
+        const errDiv = document.createElement('div');
+        errDiv.style.cssText = 'margin-top:20px;color:#c00;font-size:14px;';
+        errDiv.textContent = d.message || 'Unknown error';
+        stepList.appendChild(errDiv);
+    }
+}
+
+// ── Main submit ───────────────────────────────────────────────────────────────
+async function submitForm() {
+    const org_name = document.getElementById('org_name').value.trim();
+    const mission  = document.getElementById('mission').value.trim();
+    const goals    = document.getElementById('goals').value.trim();
+    const budget   = document.getElementById('budget').value.trim();
+    const timeline = document.getElementById('timeline').value.trim();
+
+    if (!org_name || !mission || !goals || !budget || !timeline) {
+        alert('Please fill in all fields before generating the proposal.');
+        return;
+    }
+
+    const formData = { org_name, mission, goals, budget, timeline };
+
+    // Switch to progress view
+    formContainer.style.display    = 'none';
+    loadingContainer.style.display = 'block';
+    resultContainer.style.display  = 'none';
+    buildSteps();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const baseUrl  = document.getElementById('api-url').value.trim();
+    const endpoint = baseUrl ? baseUrl.replace(/\/submit(-stream)?$/, '') + '/submit-stream' : '/submit-stream';
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
         });
 
-        // 1. Handle File Upload
-        async function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            fileStatus.textContent = `Uploading ${file.name}...`;
-            fileStatus.style.color = "#ff9800";
-
-            const formData = new FormData();
-            formData.append("file", file);
-
-            const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
-            const uploadUrl = `${baseApiUrl}/upload`;
-
-            try {
-                const response = await fetch(uploadUrl, { method: 'POST', body: formData });
-                if (!response.ok) throw new Error("Upload failed");
-
-                const data = await response.json();
-                uploadedContext = data.text; // Store text secretly in memory
-                
-                fileStatus.textContent = `✓ Background document loaded: ${file.name}. This will be used for your next request.`;
-                fileStatus.style.color = '#4caf50'; // Green
-            } catch (err) {
-                fileStatus.textContent = `Error uploading file: ${err.message}`;
-                fileStatus.style.color = '#f44336'; // Red
-            }
-            event.target.value = ''; // Reset input
+        if (!response.ok) {
+            let msg = `HTTP ${response.status}`;
+            try { const e = await response.json(); msg = e.detail || e.message || msg; } catch(_) {}
+            throw new Error(msg);
         }
 
-        // 2. Handle Send Message
-        async function sendMessage() {
-            const message = userInput.value.trim();
-            if (!message) return;
+        const reader  = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer    = '';
 
-            appendMessage(message, 'user-message');
-            userInput.value = '';
-            userInput.disabled = true;
-            sendBtn.disabled = true;
-            
-            chatBox.appendChild(loadingIndicator);
-            loadingIndicator.style.display = 'block';
-            chatBox.scrollTop = chatBox.scrollHeight;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // keep incomplete line
 
-            // Combine user message with uploaded context if it exists
-            let payloadMessage = message;
-            if (uploadedContext) {
-                payloadMessage = `[BACKGROUND DOCUMENT INFORMATION]:\n${uploadedContext}\n\n[USER REQUEST]:\n${message}`;
-            }
-
-            const apiUrl = apiUrlInput.value.trim() || '/chat';
-
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: payloadMessage })
-                });
-
-                if (!response.ok) {
-                    let errorMessage = `HTTP Error! Status: ${response.status}`;
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
                     try {
-                        const err = await response.json();
-                        if (err && (err.detail || err.message)) {
-                            errorMessage = err.detail || err.message;
-                        }
-                    } catch (_) {
-                        // Ignore JSON parse failures and keep fallback error message.
-                    }
-                    throw new Error(errorMessage);
-                }
-                const data = await response.json();
-                
-                loadingIndicator.style.display = 'none';
-                appendMessage(data.response, 'agent-message');
-
-            } catch (error) {
-                loadingIndicator.style.display = 'none';
-                appendMessage("Sorry, there was an error communicating with the server: " + error.message, 'agent-message');
-            } finally {
-                userInput.disabled = false;
-                sendBtn.disabled = false;
-                userInput.focus();
-            }
-        }
-
-        function convertBareUrlsToMarkdownLinks(text) {
-            return text.replace(/(^|[\s(])((https?:\/\/[^\s)]+))/g, '$1[$2]($2)');
-        }
-
-        function renderAgentMarkdown(container, text) {
-            const markdownInput = convertBareUrlsToMarkdownLinks(text || "");
-            if (window.marked && window.DOMPurify) {
-                const html = marked.parse(markdownInput, { breaks: true, gfm: true });
-                container.innerHTML = DOMPurify.sanitize(html);
-                container.querySelectorAll('a').forEach((a) => {
-                    a.target = "_blank";
-                    a.rel = "noopener noreferrer";
-                });
-            } else {
-                container.textContent = text || "";
-            }
-        }
-
-        function appendMessage(text, className) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${className}`;
-            
-            if (className === 'agent-message' && text.includes('Grant_Proposal_Submission.pdf')) {
-                const textContainer = document.createElement('div');
-                renderAgentMarkdown(textContainer, text);
-                messageDiv.appendChild(textContainer);
-                messageDiv.appendChild(document.createElement('br'));
-                messageDiv.appendChild(document.createElement('br'));
-                
-                const downloadBtn = document.createElement('a');
-                const baseApiUrl = apiUrlInput.value.trim() ? apiUrlInput.value.trim().replace('/chat', '') : '';
-                
-                downloadBtn.href = `${baseApiUrl}/download/Grant_Proposal_Submission.pdf`;
-                downloadBtn.download = 'Grant_Proposal_Submission.pdf';
-                downloadBtn.textContent = '📄 Download Grant Proposal';
-                
-                downloadBtn.style.display = 'inline-block';
-                downloadBtn.style.padding = '10px 15px';
-                downloadBtn.style.backgroundColor = '#17181b';
-                downloadBtn.style.color = '#f4f2ef';
-                downloadBtn.style.textDecoration = 'none';
-                downloadBtn.style.borderRadius = '16px';
-                downloadBtn.style.fontWeight = '600';
-                downloadBtn.style.transition = 'background-color 0.2s';
-                
-                downloadBtn.onmouseover = function() { this.style.backgroundColor = '#0f1012'; }
-                downloadBtn.onmouseout = function() { this.style.backgroundColor = '#17181b'; }
-                
-                messageDiv.appendChild(downloadBtn);
-            } else {
-                if (className === 'agent-message') {
-                    renderAgentMarkdown(messageDiv, text);
-                } else {
-                    messageDiv.textContent = text;
+                        const obj = JSON.parse(line.slice(6));
+                        handleEvent(obj);
+                    } catch (_) {}
                 }
             }
-            
-            chatBox.insertBefore(messageDiv, loadingIndicator);
-            chatBox.scrollTop = chatBox.scrollHeight;
         }
-    </script>
+
+    } catch (err) {
+        progressTitle.textContent = 'Error';
+        mainSpinner.style.display = 'none';
+        const errDiv = document.createElement('div');
+        errDiv.style.cssText = 'margin-top:20px;color:#c00;';
+        errDiv.textContent = err.message;
+        stepList.appendChild(errDiv);
+    }
+}
+
+// ── Render final result ───────────────────────────────────────────────────────
+function renderResult(text) {
+    let md = text.replace(/(^|[\s(])((https?:\/\/[^\s)]+))/g, '$1[$2]($2)');
+    if (window.marked && window.DOMPurify) {
+        const html = marked.parse(md, { breaks: true, gfm: true });
+        resultContent.innerHTML = DOMPurify.sanitize(html);
+        resultContent.querySelectorAll('a').forEach(a => {
+            a.target = '_blank'; a.rel = 'noopener noreferrer';
+        });
+    } else {
+        resultContent.textContent = text;
+    }
+
+    if (text.includes('Grant_Proposal_Submission.pdf')) {
+        const apiBase = document.getElementById('api-url').value.trim()
+            ? document.getElementById('api-url').value.trim().replace('/submit-stream', '').replace('/submit', '')
+            : '';
+        const viewUrl = `${apiBase}/view/Grant_Proposal_Submission.pdf`;
+        const dlUrl   = `${apiBase}/download/Grant_Proposal_Submission.pdf`;
+
+        const section  = document.createElement('div');
+        section.className = 'pdf-section';
+        const heading  = document.createElement('h3');
+        heading.textContent = '📄 Grant Proposal';
+        section.appendChild(heading);
+
+        const iframe   = document.createElement('iframe');
+        iframe.src     = viewUrl;
+        iframe.className = 'pdf-viewer';
+        iframe.title   = 'Grant Proposal PDF';
+        section.appendChild(iframe);
+
+        const actions  = document.createElement('div');
+        actions.className = 'pdf-actions';
+
+        const dlBtn    = document.createElement('a');
+        dlBtn.href     = dlUrl;
+        dlBtn.download = 'Grant_Proposal_Submission.pdf';
+        dlBtn.textContent = '⬇️ Download PDF';
+        dlBtn.className   = 'download-btn';
+
+        const openBtn  = document.createElement('a');
+        openBtn.href   = viewUrl;
+        openBtn.target = '_blank';
+        openBtn.rel    = 'noopener noreferrer';
+        openBtn.textContent = '↗ Open in New Tab';
+        openBtn.className   = 'open-btn';
+
+        actions.appendChild(dlBtn);
+        actions.appendChild(openBtn);
+        section.appendChild(actions);
+        resultContent.appendChild(section);
+    }
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+function resetForm() {
+    ['org_name','mission','goals','budget','timeline'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    resultContainer.style.display  = 'none';
+    formContainer.style.display    = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
 </body>
 </html>
