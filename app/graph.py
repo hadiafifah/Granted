@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 from typing import Dict, Optional, TypedDict
+from urllib.parse import urlparse
 
 from fpdf import FPDF
 from langgraph.graph import StateGraph
@@ -17,6 +18,7 @@ from app.agent import (
 
 # Retry policy defaults
 MAX_SEARCH_RETRIES = 5
+MAX_SEARCH_CYCLES = 15
 MAX_CONTENT_RETRIES = 2
 
 # streaming queue (module-level, set before each run)
@@ -93,6 +95,100 @@ def _coerce_match_percent(match_value, fallback_score=0) -> int:
     return _score_to_match_percent(fallback_score)
 
 
+def normalize_grant_key(name: str) -> str:
+    cleaned = "".join(ch.lower() if ch.isalnum() else " " for ch in (name or ""))
+    return "".join(cleaned.split())
+
+
+def _coerce_string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            items.append(text)
+    return items
+
+
+def _is_generic_funder_name(name: str) -> bool:
+    normalized = " ".join((name or "").strip().lower().split())
+    if not normalized:
+        return True
+    generic_tokens = [
+        "unknown grant",
+        "unknown funder",
+        "unnamed",
+        "forward-thinking funding organization",
+        "funding organization",
+        "organization",
+        "funder",
+        "grant provider",
+    ]
+    return any(token in normalized for token in generic_tokens)
+
+
+def _is_http_url(url: str) -> bool:
+    text = str(url or "").strip()
+    if not text:
+        return False
+    try:
+        parsed = urlparse(text)
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    except Exception:
+        return False
+
+
+def _is_verifiable_grant(candidate: Dict) -> bool:
+    funder_name = str(candidate.get("funder_name", "") or "").strip()
+    source_url = str(candidate.get("source_url", "") or "").strip()
+    return (not _is_generic_funder_name(funder_name)) and _is_http_url(source_url)
+
+
+def _extract_top_candidates(raw_response: str, source_query: str) -> list[Dict]:
+    parsed = _parse_json_object(raw_response, {"candidates": []})
+    candidate_items = parsed.get("candidates")
+    if not isinstance(candidate_items, list):
+        # Backward compatibility: tolerate single-candidate object responses.
+        if isinstance(parsed.get("funder_name"), str):
+            candidate_items = [parsed]
+        else:
+            candidate_items = []
+
+    candidates: list[Dict] = []
+    for idx, item in enumerate(candidate_items[:3]):
+        data = _coerce_dict(item)
+        funder_name = str(data.get("funder_name", "") or "").strip() or "Unknown Grant"
+        candidates.append(
+            {
+                "funder_name": funder_name,
+                "mission": str(data.get("mission", "") or "").strip(),
+                "priorities": str(data.get("priorities", "") or "").strip(),
+                "deadline": data.get("deadline"),
+                "summary": str(data.get("summary", "") or "").strip(),
+                "source_url": str(data.get("source_url", "") or "").strip(),
+                "source_query": source_query,
+                "candidate_rank": idx + 1,
+            }
+        )
+
+    if candidates:
+        return candidates
+
+    return [
+        {
+            "funder_name": "Unknown Grant",
+            "mission": "",
+            "priorities": "",
+            "deadline": None,
+            "summary": (raw_response or "")[:300],
+            "source_url": "",
+            "source_query": source_query,
+            "candidate_rank": 1,
+        }
+    ]
+
+
 def _pick_better_grant_candidate(
     current_funder: Dict,
     current_review: Dict,
@@ -136,10 +232,14 @@ class GrantState(TypedDict):
     calendar_event: Optional[str]
     final_summary: Optional[str]
     search_attempts: Optional[int]
+    search_cycles: Optional[int]
     content_attempts: Optional[int]
     grant_review: Optional[Dict]
     content_review: Optional[Dict]
     refined_search_query: Optional[str]
+    seen_grant_keys: Optional[list[str]]
+    seen_grant_names: Optional[list[str]]
+    extract_duplicate_only: Optional[bool]
     halt_reason: Optional[str]
 
 
@@ -178,6 +278,7 @@ Only return the search query text. Do not use quotes or introductory text.
         "project_details": project_details,
         "user_input": search_query,
         "search_attempts": 0,
+        "search_cycles": 0,
         "content_attempts": 0,
         "grant_review": None,
         "best_funder_info": None,
@@ -185,6 +286,9 @@ Only return the search query text. Do not use quotes or introductory text.
         "best_grant_attempt": None,
         "content_review": None,
         "refined_search_query": None,
+        "seen_grant_keys": [],
+        "seen_grant_names": [],
+        "extract_duplicate_only": False,
         "halt_reason": None,
         "proposal_text": "",
         "email_draft": "",
@@ -195,7 +299,8 @@ Only return the search query text. Do not use quotes or introductory text.
 
 def search_node(state: GrantState):
     _emit({"type": "node_start", "node": "search", "label": "Searching the web for active grants..."})
-    attempts = int(state.get("search_attempts") or 0) + 1
+    cycles = int(state.get("search_cycles") or 0) + 1
+    attempts = int(state.get("search_attempts") or 0)
     base_query = (state.get("refined_search_query") or state.get("user_input") or "").strip()
     query = f"{base_query} grant {datetime.now().year} nonprofit funding".strip()
     try:
@@ -204,20 +309,25 @@ def search_node(state: GrantState):
             {
                 "type": "node_done",
                 "node": "search",
-                "label": f"Grant search complete (attempt {attempts}/{MAX_SEARCH_RETRIES})",
+                "label": (
+                    f"Grant search cycle {cycles}/{MAX_SEARCH_CYCLES} complete "
+                    f"(unique reviews: {attempts}/{MAX_SEARCH_RETRIES})"
+                ),
             }
         )
         return {
             "funder_info": {"raw_result": str(result), "query_used": query},
-            "search_attempts": attempts,
+            "search_cycles": cycles,
             "refined_search_query": None,
+            "extract_duplicate_only": False,
         }
     except Exception as e:
         _emit({"type": "node_done", "node": "search", "label": f"Search failed: {e}"})
         return {
             "funder_info": {"raw_result": f"Search failed: {e}", "query_used": query},
-            "search_attempts": attempts,
+            "search_cycles": cycles,
             "refined_search_query": None,
+            "extract_duplicate_only": False,
         }
 
 
@@ -226,62 +336,161 @@ def extract_funder_node(state: GrantState):
         {
             "type": "node_start",
             "node": "extract",
-            "label": "Identifying the best-matching grant opportunity...",
+            "label": "Identifying verifiable grant opportunities...",
         }
     )
 
     fi_state = _coerce_dict(state.get("funder_info") or {})
     raw = fi_state.get("raw_result", "")
 
+    seen_grant_keys = _coerce_string_list(state.get("seen_grant_keys"))
+    seen_grant_names = _coerce_string_list(state.get("seen_grant_names"))
+    seen_keys_set = {normalize_grant_key(name) for name in seen_grant_keys if normalize_grant_key(name)}
+
+    already_seen_text = ", ".join(seen_grant_names[:10]) if seen_grant_names else "None"
     prompt = f"""
-You are a grant research assistant. From the search results below, identify the SINGLE most promising and active grant opportunity for this organization.
+You are a grant research assistant. From the search results below, identify up to 3 active grant opportunities ranked by best fit for this organization.
 
 SEARCH RESULT:
 {raw}
 
-Pick only ONE funder - the best match. Return a single JSON object (not a list) with exactly these keys:
-- funder_name: (string) Name of the grant program or foundation
-- mission: (string) The funder's stated mission or focus area
-- priorities: (string) Key funding priorities or eligibility criteria
-- deadline: (string) Application deadline in YYYY-MM-DD format, or null if unknown
-- summary: (string) 2-3 sentence summary of why this is the best match and what the grant covers
+ALREADY REVIEWED GRANTS (avoid duplicates):
+{already_seen_text}
+
+Return exactly one JSON object with this shape:
+{{
+  "candidates": [
+    {{
+      "funder_name": "string",
+      "mission": "string",
+      "priorities": "string",
+      "deadline": "YYYY-MM-DD or null",
+      "summary": "2-3 sentences",
+      "source_url": "https://... exact page URL where this grant was found"
+    }}
+  ]
+}}
 
 Rules:
-- Return ONLY the raw JSON object. No markdown, no backticks, no explanation.
-- Do NOT return a list. Return a single JSON object.
-- If deadline is unclear or not mentioned, set it to null.
+- Return ONLY raw JSON. No markdown, no backticks.
+- Provide up to 3 candidates sorted best to worst fit.
+- Prefer candidates not listed in ALREADY REVIEWED GRANTS.
+- Do NOT use placeholders like "unnamed", "unknown", or generic funder labels.
+- Every candidate must include a valid source_url from SEARCH RESULT.
+- If deadline is unclear, set it to null.
 """
     response = llm.invoke(prompt).content.strip()
+    source_query = fi_state.get("query_used", "")
+    candidates = _extract_top_candidates(response, source_query)
 
-    data = _parse_json_object(
-        response,
-        {
-            "funder_name": "Unknown Grant",
-            "mission": "",
-            "priorities": "",
-            "deadline": None,
-            "summary": response[:300],
-        },
-    )
-    data["source_query"] = fi_state.get("query_used", "")
+    selected_candidate = None
+    selected_key = ""
+    for candidate in candidates:
+        key = normalize_grant_key(str(candidate.get("funder_name", "") or ""))
+        if not _is_verifiable_grant(candidate):
+            continue
+        if key and key in seen_keys_set:
+            continue
+        selected_candidate = candidate
+        selected_key = key
+        break
+
+    if selected_candidate is not None:
+        updated_seen_keys = list(seen_grant_keys)
+        updated_seen_names = list(seen_grant_names)
+        if selected_key and selected_key not in seen_keys_set:
+            updated_seen_keys.append(selected_key)
+            updated_seen_names.append(str(selected_candidate.get("funder_name", "Unknown Grant")))
+
+        _emit(
+            {
+                "type": "node_done",
+                "node": "extract",
+                "label": (
+                    f"Selected unseen grant: {selected_candidate.get('funder_name', 'Unknown Grant')} "
+                    f"(candidate {selected_candidate.get('candidate_rank', 1)} of {len(candidates)})"
+                ),
+                "funder": selected_candidate.get("funder_name", ""),
+                "deadline": selected_candidate.get("deadline", ""),
+            }
+        )
+        return {
+            "funder_info": selected_candidate,
+            "seen_grant_keys": updated_seen_keys,
+            "seen_grant_names": updated_seen_names,
+            "extract_duplicate_only": False,
+            "halt_reason": None,
+        }
+
+    reviewed_names = ", ".join(seen_grant_names[-12:]) if seen_grant_names else "None"
+    base_query = (
+        state.get("refined_search_query")
+        or state.get("user_input")
+        or fi_state.get("query_used", "")
+        or ""
+    ).strip()
+    novelty_prompt = f"""
+Create one concise web search query to find different active grants for this nonprofit.
+
+Current query:
+{base_query}
+
+Avoid these previously reviewed grants:
+{reviewed_names}
+
+Rules:
+- Return only the query text.
+- 6-12 words.
+- Prioritize grants likely to be different from the avoided list.
+- Prioritize results with named funders and official grant program pages.
+"""
+    refined_query = llm.invoke(novelty_prompt).content.strip()
+    if not refined_query:
+        refined_query = f"{base_query} alternative grant programs".strip()
 
     _emit(
         {
             "type": "node_done",
             "node": "extract",
-            "label": f"Best match found: {data.get('funder_name', 'Unknown')}",
-            "funder": data.get("funder_name", ""),
-            "deadline": data.get("deadline", ""),
+            "label": (
+                f"No unseen verifiable candidate in top {len(candidates)}; "
+                "refining search for named grants with URLs"
+            ),
         }
     )
-    return {"funder_info": data}
+    best_funder_info = _coerce_dict(state.get("best_funder_info") or {})
+    best_grant_review = _coerce_dict(state.get("best_grant_review") or {})
+    return {
+        "funder_info": best_funder_info or candidates[0],
+        "grant_review": best_grant_review or state.get("grant_review"),
+        "extract_duplicate_only": True,
+        "refined_search_query": refined_query,
+    }
+
+
+def route_after_extract(state: GrantState) -> str:
+    duplicate_only = bool(state.get("extract_duplicate_only"))
+    if not duplicate_only:
+        return "to_grant_review"
+
+    attempts = int(state.get("search_attempts") or 0)
+    cycles = int(state.get("search_cycles") or 0)
+    has_best_review = bool(_coerce_dict(state.get("best_grant_review") or {}))
+
+    if attempts >= MAX_SEARCH_RETRIES or cycles >= MAX_SEARCH_CYCLES:
+        if has_best_review:
+            return "to_pdf"
+        # Extreme fallback: force one assessment so the flow can continue safely.
+        return "to_grant_review"
+
+    return "retry_search"
 
 
 def grant_review_node(state: GrantState):
     _emit({"type": "node_start", "node": "grant_review", "label": "Reviewing grant relevance..."})
     project_details = state.get("project_details", "") or ""
     funder_info = _coerce_dict(state.get("funder_info") or {})
-    attempts = int(state.get("search_attempts") or 0)
+    attempts = min(int(state.get("search_attempts") or 0) + 1, MAX_SEARCH_RETRIES)
     original_query = (state.get("user_input") or "").strip()
 
     prompt = f"""
@@ -303,6 +512,7 @@ Return exactly one JSON object with these keys:
 
 Rules:
 - Be strict. Fail if fit is weak, ambiguous, stale, or not actionable.
+- Fail if the funder is unnamed/generic or if source_url is missing/invalid.
 - Return only raw JSON.
 """
     raw = llm.invoke(prompt).content.strip()
@@ -322,6 +532,19 @@ Rules:
     review["match_percent"] = _score_to_match_percent(review["score"])
     review["reasons"] = review.get("reasons") if isinstance(review.get("reasons"), list) else []
     review["improvement_notes"] = str(review.get("improvement_notes", "") or "").strip()
+    halt_reason = None
+
+    if not _is_verifiable_grant(funder_info):
+        review["verdict"] = "fail"
+        review["score"] = min(int(review.get("score", 0) or 0), 1)
+        review["match_percent"] = _score_to_match_percent(review["score"])
+        review["reasons"] = list(review["reasons"]) + [
+            "Selected grant is not verifiable (missing named funder and/or valid source URL)."
+        ]
+        if not review["improvement_notes"]:
+            review["improvement_notes"] = (
+                "Search for a named grant program and include a direct source URL before proceeding."
+            )
 
     refined_query = review.get("refined_search_query")
     if review["verdict"] == "pass":
@@ -376,12 +599,19 @@ Rules:
         selected_review.get("score", 0),
     )
     selected_name = str(selected_funder_info.get("funder_name", "Unknown Grant") or "Unknown Grant")
+    selected_verifiable = _is_verifiable_grant(selected_funder_info)
     label = f"Grant review complete: {review['match_percent']}% match (attempt {attempts}/{MAX_SEARCH_RETRIES})"
     if next_action == "proceed" and review["verdict"] != "pass":
         label = (
             f"No passing grant found. Using best attempt {selected_attempt}: "
             f"{selected_match}% match ({selected_name})"
         )
+    if next_action == "proceed" and not selected_verifiable:
+        halt_reason = (
+            "No verifiable grant opportunity was found after max search attempts. "
+            "A named funder and valid source URL are required before generating proposal content."
+        )
+        label = "Grant search ended without a verifiable named funder; stopping for manual review"
 
     _emit(
         {
@@ -395,23 +625,29 @@ Rules:
         }
     )
     return {
+        "search_attempts": attempts,
         "grant_review": selected_review,
         "funder_info": selected_funder_info,
         "refined_search_query": refined_query,
         "best_funder_info": best_funder_info,
         "best_grant_review": best_grant_review,
         "best_grant_attempt": best_grant_attempt,
+        "halt_reason": halt_reason,
     }
 
 
 def route_after_grant_review(state: GrantState) -> str:
+    if str(state.get("halt_reason", "") or "").strip():
+        return "to_summary"
+
     review = _coerce_dict(state.get("grant_review") or {})
     verdict = _normalize_verdict(review.get("verdict"), default="fail")
     attempts = int(state.get("search_attempts") or 0)
+    cycles = int(state.get("search_cycles") or 0)
 
     if verdict == "pass":
         return "to_pdf"
-    if attempts < MAX_SEARCH_RETRIES:
+    if attempts < MAX_SEARCH_RETRIES and cycles < MAX_SEARCH_CYCLES:
         return "retry_search"
     return "to_pdf"
 
@@ -585,11 +821,11 @@ Rules:
     elif attempts < MAX_CONTENT_RETRIES:
         next_action = "retry_pdf"
     else:
-        next_action = "halt_manual_review"
+        next_action = "proceed_with_warning"
 
     if review["verdict"] != "pass" and attempts >= MAX_CONTENT_RETRIES:
         halt_reason = (
-            "Content quality threshold was not reached after max retries. Manual review is required before sending outreach."
+            "Content quality threshold was not reached after max retries. Outreach will continue, but manual review is strongly recommended."
         )
 
     _emit(
@@ -631,7 +867,7 @@ def route_after_content_review(state: GrantState) -> str:
         return "to_send"
     if attempts < MAX_CONTENT_RETRIES:
         return "retry_pdf"
-    return "to_summary"
+    return "to_send"
 
 
 def send_node(state: GrantState):
@@ -770,6 +1006,7 @@ def summary_node(state: GrantState):
             email_body = raw_draft
 
         grant_attempts = int(state.get("search_attempts") or 0)
+        search_cycles = int(state.get("search_cycles") or 0)
         content_attempts = int(state.get("content_attempts") or 0)
         grant_verdict = _normalize_verdict(grant_review.get("verdict"), default="fail")
         grant_match = _coerce_match_percent(grant_review.get("match_percent"), grant_review.get("score", 0))
@@ -777,17 +1014,16 @@ def summary_node(state: GrantState):
         halt_reason = (state.get("halt_reason") or "").strip()
         email_status = email_result.get("status", "N/A")
         calendar_status = state.get("calendar_event", "N/A")
-        if halt_reason:
-            email_status = "not sent (halted by content review)"
-            calendar_status = "not created (halted before send)"
 
         summary = (
             "## Grant Summary\n\n"
             f"**Funder:** {funder_info.get('funder_name', 'N/A')}\n\n"
+            f"**Source URL:** {funder_info.get('source_url', 'N/A')}\n\n"
             f"**Deadline:** {funder_info.get('deadline', 'N/A')}\n\n"
             f"**Summary:** {funder_info.get('summary', 'N/A')}\n\n"
             "---\n\n"
             "## Review Gates\n\n"
+            f"**Search Cycles:** {search_cycles}/{MAX_SEARCH_CYCLES}\n\n"
             f"**Grant Match:** {grant_match}% (attempts: {grant_attempts}/{MAX_SEARCH_RETRIES})\n\n"
             f"{_listify_text(grant_review.get('reasons'))}\n\n"
             f"**Grant Reviewer Notes:** {grant_review.get('improvement_notes', 'N/A')}\n\n"
@@ -838,11 +1074,15 @@ builder.add_node("summary", summary_node)
 builder.set_entry_point("parse")
 builder.add_edge("parse", "search")
 builder.add_edge("search", "extract")
-builder.add_edge("extract", "grant_review")
+builder.add_conditional_edges(
+    "extract",
+    route_after_extract,
+    {"to_grant_review": "grant_review", "retry_search": "search", "to_pdf": "pdf"},
+)
 builder.add_conditional_edges(
     "grant_review",
     route_after_grant_review,
-    {"retry_search": "search", "to_pdf": "pdf"},
+    {"retry_search": "search", "to_pdf": "pdf", "to_summary": "summary"},
 )
 builder.add_edge("pdf", "email")
 builder.add_edge("email", "content_review")

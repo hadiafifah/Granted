@@ -431,6 +431,7 @@ function mapReviewAction(action, nodeId, verdict) {
     if (action === 'retry_search') return 'Searching again for a better match';
     if (action === 'retry_pdf') return 'Regenerating proposal and email';
     if (action === 'halt_manual_review') return 'Manual review required';
+    if (action === 'proceed_with_warning') return 'Continuing with a manual-review warning';
     if (action === 'proceed' && nodeId === 'grant_review' && verdict === 'fail') {
         return 'Proceeding with best available grant match';
     }
