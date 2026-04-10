@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict
 
 from dotenv import load_dotenv
-from fpdf import FPDF
 from email.message import EmailMessage
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -21,6 +20,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from datetime import timedelta
+
+from app.pdf_utils import render_proposal_pdf
 
 load_dotenv()
 
@@ -95,30 +96,14 @@ def generate_grant_and_save_pdf(funder_details: str, project_details: str) -> st
         full_proposal[section] = response.content
 
     print("\n[Tool Executing] Formatting and saving to PDF...")
-    
-    # Format Text
     date_str = datetime.now().strftime("%B %d, %Y")
-    formatted_text = f"Grant Proposal Submission\nDate: {date_str}\n\n{'='*70}\n"
-    
-    for title, content in full_proposal.items():
-        formatted_text += f"\n\n{title.upper()}\n"
-        formatted_text += "-" * len(title) + "\n\n"
-        formatted_text += content.strip() + "\n"
-        formatted_text += "\n" + "="*70 + "\n"
-
-    # Save to PDF
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", '', 11)
-
-    # Clean text encoding to prevent latin-1 character errors in FPDF
-    cleaned_text = formatted_text.encode('latin-1', 'replace').decode('latin-1')
-    for line in cleaned_text.split("\n"):
-        pdf.multi_cell(0, 8, line)
-
     pdf_file_name = "Grant_Proposal_Submission.pdf"
-    pdf.output(pdf_file_name)
+    render_proposal_pdf(
+        proposal_sections={str(k): str(v) for k, v in full_proposal.items()},
+        output_path=pdf_file_name,
+        title="Grant Proposal Submission",
+        date_str=date_str,
+    )
     
     return f"Success! The grant proposal has been generated and saved locally as {pdf_file_name}."
 

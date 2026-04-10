@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, TypedDict
 from urllib.parse import urlparse
 
-from fpdf import FPDF
 from langgraph.graph import StateGraph
 
 from app.agent import (
@@ -15,6 +14,7 @@ from app.agent import (
     search_tool,
     send_email,
 )
+from app.pdf_utils import build_proposal_plain_text, render_proposal_pdf
 
 # Retry policy defaults
 MAX_SEARCH_RETRIES = 5
@@ -227,6 +227,7 @@ class GrantState(TypedDict):
     best_grant_attempt: Optional[int]
     proposal_pdf_path: Optional[str]
     proposal_text: Optional[str]
+    proposal_sections: Optional[Dict[str, str]]
     email_draft: Optional[str]
     email_result: Optional[Dict]
     calendar_event: Optional[str]
@@ -291,6 +292,7 @@ Only return the search query text. Do not use quotes or introductory text.
         "extract_duplicate_only": False,
         "halt_reason": None,
         "proposal_text": "",
+        "proposal_sections": {},
         "email_draft": "",
         "email_result": {},
         "calendar_event": "",
@@ -702,28 +704,28 @@ INSTRUCTIONS:
 
     _emit({"type": "node_start", "node": "pdf_save", "label": "Formatting and saving proposal PDF..."})
     date_str = datetime.now().strftime("%B %d, %Y")
-    formatted_text = f"Grant Proposal Submission\nDate: {date_str}\n\n{'=' * 70}\n"
-    for title, content in full_proposal.items():
-        formatted_text += f"\n\n{title.upper()}\n"
-        formatted_text += "-" * len(title) + "\n\n"
-        formatted_text += str(content).strip() + "\n"
-        formatted_text += "\n" + "=" * 70 + "\n"
-
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", "", 11)
-    cleaned_text = formatted_text.encode("latin-1", "replace").decode("latin-1")
-    for line in cleaned_text.split("\n"):
-        pdf.multi_cell(0, 8, line)
-
     pdf_file_name = "Grant_Proposal_Submission.pdf"
-    pdf.output(pdf_file_name)
+    render_proposal_pdf(
+        proposal_sections=full_proposal,
+        output_path=pdf_file_name,
+        title="Grant Proposal Submission",
+        date_str=date_str,
+    )
+
+    formatted_text = build_proposal_plain_text(
+        proposal_sections=full_proposal,
+        date_str=date_str,
+        title="Grant Proposal Submission",
+    )
 
     label = "Proposal PDF saved"
     _emit({"type": "node_done", "node": "pdf", "label": label})
 
-    return {"proposal_pdf_path": pdf_file_name, "proposal_text": formatted_text}
+    return {
+        "proposal_pdf_path": pdf_file_name,
+        "proposal_text": formatted_text,
+        "proposal_sections": {str(k): str(v) for k, v in full_proposal.items()},
+    }
 
 
 def email_node(state: GrantState):
@@ -769,7 +771,12 @@ def content_review_node(state: GrantState):
     project_details = state.get("project_details", "") or ""
     funder_info = _coerce_dict(state.get("funder_info") or {})
     proposal_text = state.get("proposal_text", "") or ""
+    proposal_sections = state.get("proposal_sections") or {}
+    if not isinstance(proposal_sections, dict):
+        proposal_sections = {}
     email_draft = state.get("email_draft", "") or ""
+    proposal_payload = json.dumps(proposal_sections, indent=2)
+    proposal_context = proposal_payload if proposal_sections else proposal_text
 
     prompt = f"""
 You are a strict grant-communications reviewer.
@@ -783,8 +790,8 @@ PROJECT DETAILS:
 FUNDER INFO:
 {json.dumps(funder_info, indent=2)}
 
-PROPOSAL TEXT:
-{proposal_text[:6000]}
+PROPOSAL SECTIONS (canonical full text by section):
+{proposal_context}
 
 EMAIL DRAFT:
 {email_draft}
@@ -797,6 +804,7 @@ Return exactly one JSON object with these keys:
 
 Rules:
 - Fail if the proposal/email are generic, misaligned, or weakly tied to funder priorities.
+- Assess section completeness using the full section map above. Do not claim "cut off" unless text clearly ends abruptly.
 - Return only raw JSON.
 """
     raw = llm.invoke(prompt).content.strip()
