@@ -514,6 +514,10 @@ function setStepError(nodeId) {
         document.getElementById(`icon-${nodeId}`).textContent = '✕';
     }
 }
+function setStepLabel(nodeId, text) {
+    const label = document.getElementById(`label-${nodeId}`);
+    if (label && text) label.textContent = text;
+}
 function setStepSub(nodeId, text) {
     const sub = document.getElementById(`sub-${nodeId}`);
     if (sub) sub.textContent = text;
@@ -625,6 +629,9 @@ function handleEvent(evt) {
         // pdf_save is a sub-step of pdf, don't create a new row
         const nodeId = d.node === 'pdf_save' ? 'pdf' : d.node;
         setStepActive(nodeId);
+        if ((nodeId === 'search' || nodeId === 'extract') && d.label) {
+            setStepLabel(nodeId, d.label);
+        }
         setStepSub(nodeId, d.label || '');
         progressTitle.textContent = d.label || 'Working…';
     }

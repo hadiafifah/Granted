@@ -28,6 +28,53 @@ def _clean_inline_markdown(text: str) -> str:
 def _is_list_or_heading(line: str) -> bool:
     return bool(_HEADING_RE.match(line) or _BULLET_RE.match(line) or _NUMBERED_RE.match(line))
 
+def _normalize_heading_text(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(text or "").lower())
+
+def _clean_heading_candidate(line: str) -> str:
+    cleaned = str(line or "").strip()
+    cleaned = re.sub(r"^#+\s*", "", cleaned)
+    cleaned = re.sub(r"^\d+[.)]\s*", "", cleaned)
+    cleaned = cleaned.strip("`*_ ").rstrip(":").strip()
+    return cleaned
+
+def _strip_redundant_section_heading(section_title: str, section_body: str) -> str:
+    text = str(section_body or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    first_idx = None
+    for idx, line in enumerate(lines):
+        if line.strip():
+            first_idx = idx
+            break
+    if first_idx is None:
+        return ""
+
+    title_norm = _normalize_heading_text(section_title)
+    first_line_clean = _clean_heading_candidate(lines[first_idx])
+    first_line_norm = _normalize_heading_text(first_line_clean)
+    heading_with_optional_body = re.match(
+        rf"^\s*(?:#+\s*)?(?:\d+[.)]\s*)?{re.escape(section_title)}\s*[:\-]?\s*(.*)$",
+        lines[first_idx],
+        flags=re.IGNORECASE,
+    )
+
+    if heading_with_optional_body:
+        remainder = heading_with_optional_body.group(1).strip("`*_ ").strip()
+        if remainder:
+            lines[first_idx] = remainder
+            return "\n".join(lines).strip()
+        lines.pop(first_idx)
+        while first_idx < len(lines) and not lines[first_idx].strip():
+            lines.pop(first_idx)
+        return "\n".join(lines).strip()
+
+    if first_line_norm and first_line_norm == title_norm:
+        lines.pop(first_idx)
+        while first_idx < len(lines) and not lines[first_idx].strip():
+            lines.pop(first_idx)
+
+    return "\n".join(lines).strip()
+
 
 class ProposalPDF(FPDF):
     def __init__(self, title: str):
@@ -39,24 +86,24 @@ class ProposalPDF(FPDF):
     def header(self):
         if self.page_no() == 1:
             return
-        self.set_font("Arial", "I", 8)
+        self.set_font("Times", "I", 8)
         self.set_text_color(120, 120, 120)
         self.cell(0, 6, _latin1_safe(self.doc_title), 0, 1, "R")
         self.ln(2)
 
     def footer(self):
         self.set_y(-12)
-        self.set_font("Arial", "I", 8)
+        self.set_font("Times", "I", 8)
         self.set_text_color(120, 120, 120)
         self.cell(0, 6, f"Page {self.page_no()}", 0, 0, "C")
 
 
 def _write_title_block(pdf: ProposalPDF, date_str: str, title: str):
     pdf.set_text_color(20, 20, 20)
-    pdf.set_font("Arial", "B", 18)
+    pdf.set_font("Times", "B", 18)
     pdf.multi_cell(0, 10, _latin1_safe(title), align="C")
     pdf.ln(2)
-    pdf.set_font("Arial", "", 11)
+    pdf.set_font("Times", "", 11)
     pdf.multi_cell(0, 7, _latin1_safe(f"Date: {date_str}"), align="C")
     pdf.ln(4)
     y = pdf.get_y()
@@ -67,7 +114,7 @@ def _write_title_block(pdf: ProposalPDF, date_str: str, title: str):
 
 def _write_section_heading(pdf: ProposalPDF, title: str):
     pdf.set_text_color(15, 15, 15)
-    pdf.set_font("Arial", "B", 13)
+    pdf.set_font("Times", "B", 13)
     pdf.multi_cell(0, 8, _latin1_safe(title))
     y = pdf.get_y()
     pdf.set_draw_color(210, 210, 210)
@@ -80,7 +127,7 @@ def _write_subheading(pdf: ProposalPDF, text: str):
     if not heading:
         return
     pdf.set_text_color(25, 25, 25)
-    pdf.set_font("Arial", "B", 11)
+    pdf.set_font("Times", "B", 11)
     pdf.multi_cell(0, 7, heading)
     pdf.ln(1)
 
@@ -90,7 +137,7 @@ def _write_paragraph(pdf: ProposalPDF, text: str):
     if not paragraph:
         return
     pdf.set_text_color(25, 25, 25)
-    pdf.set_font("Arial", "", 11)
+    pdf.set_font("Times", "", 11)
     pdf.multi_cell(0, 7, paragraph)
     pdf.ln(1)
 
@@ -101,7 +148,7 @@ def _write_list_item(pdf: ProposalPDF, prefix: str, text: str):
         return
 
     pdf.set_text_color(25, 25, 25)
-    pdf.set_font("Arial", "", 11)
+    pdf.set_font("Times", "", 11)
     indent_x = pdf.l_margin + 6
     width = pdf.w - pdf.r_margin - indent_x
     pdf.set_x(indent_x)
@@ -176,7 +223,8 @@ def render_proposal_pdf(
 
     for section_title, section_body in proposal_sections.items():
         _write_section_heading(pdf, section_title)
-        blocks = re.split(r"\n\s*\n", str(section_body or "").replace("\r\n", "\n").replace("\r", "\n").strip())
+        cleaned_body = _strip_redundant_section_heading(section_title, str(section_body or ""))
+        blocks = re.split(r"\n\s*\n", cleaned_body)
         if not any(block.strip() for block in blocks):
             _write_paragraph(pdf, "No content generated for this section.")
         else:
@@ -184,7 +232,7 @@ def render_proposal_pdf(
                 if not block.strip():
                     continue
                 _render_markdown_like_block(pdf, block)
-        pdf.ln(2)
+        pdf.ln(6)
 
     pdf.output(output_path)
 

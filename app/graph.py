@@ -300,9 +300,10 @@ Only return the search query text. Do not use quotes or introductory text.
 
 
 def search_node(state: GrantState):
-    _emit({"type": "node_start", "node": "search", "label": "Searching the web for active grants..."})
+    _emit({"type": "node_start", "node": "search", "label": "Searching for new grants..."})
     cycles = int(state.get("search_cycles") or 0) + 1
     attempts = int(state.get("search_attempts") or 0)
+    attempt_display = min(attempts + 1, MAX_SEARCH_RETRIES)
     base_query = (state.get("refined_search_query") or state.get("user_input") or "").strip()
     query = f"{base_query} grant {datetime.now().year} nonprofit funding".strip()
     try:
@@ -311,10 +312,7 @@ def search_node(state: GrantState):
             {
                 "type": "node_done",
                 "node": "search",
-                "label": (
-                    f"Grant search cycle {cycles}/{MAX_SEARCH_CYCLES} complete "
-                    f"(unique reviews: {attempts}/{MAX_SEARCH_RETRIES})"
-                ),
+                "label": f"Found new grant (attempt {attempt_display}/{MAX_SEARCH_RETRIES})",
             }
         )
         return {
@@ -334,11 +332,12 @@ def search_node(state: GrantState):
 
 
 def extract_funder_node(state: GrantState):
+    retry_verification = int(state.get("search_attempts") or 0) > 0
     _emit(
         {
             "type": "node_start",
             "node": "extract",
-            "label": "Identifying verifiable grant opportunities...",
+            "label": "Verifying new grant..." if retry_verification else "Identifying verifiable grant opportunities...",
         }
     )
 
@@ -408,10 +407,7 @@ Rules:
             {
                 "type": "node_done",
                 "node": "extract",
-                "label": (
-                    f"Selected unseen grant: {selected_candidate.get('funder_name', 'Unknown Grant')} "
-                    f"(candidate {selected_candidate.get('candidate_rank', 1)} of {len(candidates)})"
-                ),
+                "label": f"Selected unseen grant: {selected_candidate.get('funder_name', 'Unknown Grant')}",
                 "funder": selected_candidate.get("funder_name", ""),
                 "deadline": selected_candidate.get("deadline", ""),
             }
