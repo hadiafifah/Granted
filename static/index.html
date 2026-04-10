@@ -30,16 +30,18 @@
             padding: 24px 34px;
             flex-wrap: wrap;
         }
-        .brand-block { display: flex; align-items: baseline; gap: 24px; }
+        .brand-block { display: flex; align-items: center; gap: 24px; }
         .header { margin: 0; }
         .header h1 { color: #1d1d1f; margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
         .header p  { color: #3d3024; margin: 0; font-size: 1.05em; }
-        .config-container { margin: 0; display: flex; align-items: center; gap: 16px; }
-        .config-container label { font-size: 0.95em; color: #33291f; font-weight: 600; }
-        .config-container input {
-            padding: 8px 12px; border-radius: 12px;
-            border: 1px solid #bc9369; background-color: #f3dfcb;
-            color: #2a2a2a; width: 300px; outline: none;
+        .brand-title { display: flex; align-items: center; gap: 12px; color: #1d1d1f; }
+        .brand-logo {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            background-color: currentColor;
+            -webkit-mask: url('granted_logo.png') center / contain no-repeat;
+            mask: url('granted_logo.png') center / contain no-repeat;
         }
 
         /* ── Main container ── */
@@ -231,12 +233,13 @@
 
 <div class="top-nav">
     <div class="brand-block">
-        <div class="header"><h1>Granted</h1></div>
+        <div class="header">
+            <h1 class="brand-title">
+                <span class="brand-logo" aria-hidden="true"></span>
+                <span>Granted</span>
+            </h1>
+        </div>
         <div class="header"><p>End-to-End Grant Discovery &amp; Proposal Assistant</p></div>
-    </div>
-    <div class="config-container">
-        <label for="api-url">API URL (Optional):</label>
-        <input type="text" id="api-url" placeholder="Leave blank for relative /submit-stream">
     </div>
 </div>
 
@@ -329,6 +332,14 @@ const resultContent    = document.getElementById('result-content');
 const stepList         = document.getElementById('step-list');
 const mainSpinner      = document.getElementById('main-spinner');
 const progressTitle    = document.getElementById('progress-title');
+
+function getApiBaseUrl() {
+    const apiInput = document.getElementById('api-url');
+    if (!apiInput) return '';
+    const raw = apiInput.value.trim();
+    if (!raw) return '';
+    return raw.replace(/\/submit(-stream)?$/, '').replace(/\/$/, '');
+}
 
 // ── Build step rows ───────────────────────────────────────────────────────────
 function buildSteps() {
@@ -610,8 +621,8 @@ async function submitForm() {
     buildSteps();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    const baseUrl  = document.getElementById('api-url').value.trim();
-    const endpoint = baseUrl ? baseUrl.replace(/\/submit(-stream)?$/, '') + '/submit-stream' : '/submit-stream';
+    const apiBase  = getApiBaseUrl();
+    const endpoint = apiBase ? `${apiBase}/submit-stream` : '/submit-stream';
 
     try {
         const response = await fetch(endpoint, {
@@ -671,9 +682,7 @@ function renderResult(text) {
     }
 
     if (text.includes('Grant_Proposal_Submission.pdf')) {
-        const apiBase = document.getElementById('api-url').value.trim()
-            ? document.getElementById('api-url').value.trim().replace('/submit-stream', '').replace('/submit', '')
-            : '';
+        const apiBase = getApiBaseUrl();
         const viewUrl = `${apiBase}/view/Grant_Proposal_Submission.pdf`;
         const dlUrl   = `${apiBase}/download/Grant_Proposal_Submission.pdf`;
 
