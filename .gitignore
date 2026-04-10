@@ -3,3 +3,5 @@ Grant_Proposal_Submission.pdf
 .env
 app/__pycache__
 token.json
+.venv
+.git

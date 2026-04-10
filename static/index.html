@@ -122,6 +122,7 @@
         }
         .step.active  { opacity: 1; background: #fff8f0; border-color: #d18b3f; }
         .step.done    { opacity: 1; background: #f4faf6; border-color: #7ec8a0; }
+        .step.warning { opacity: 1; background: #fff8ef; border-color: #e2a85f; }
         .step.error   { opacity: 1; background: #fff4f4; border-color: #e88; }
 
         .step-icon {
@@ -133,6 +134,7 @@
         }
         .step.active .step-icon { background: #d18b3f; animation: pulse 1.2s ease-in-out infinite; }
         .step.done  .step-icon  { background: #4caf7d; }
+        .step.warning .step-icon { background: #d5964a; }
         .step.error .step-icon  { background: #e55; }
         @keyframes pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(209,139,63,.4); }
@@ -142,6 +144,41 @@
         .step-body { flex: 1; }
         .step-label { font-weight: 600; font-size: 15px; color: #1d1d1f; }
         .step-sub   { font-size: 13px; color: #7b7265; margin-top: 3px; }
+
+        /* Reviewer attempt trace */
+        .review-attempts { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+        .review-card {
+            border: 1px solid #d8d0c5;
+            border-radius: 10px;
+            background: #faf7f2;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #3f372f;
+        }
+        .review-card.pass { border-color: #7ec8a0; background: #f4faf6; }
+        .review-card.fail { border-color: #e2a85f; background: #fff8ef; }
+        .review-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        .review-badge {
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 11px;
+            color: #fff;
+        }
+        .review-badge.pass { background: #2d7a51; }
+        .review-badge.fail { background: #b86b1a; }
+        .review-meta { color: #6c6257; margin-bottom: 6px; }
+        .review-reasons {
+            margin: 0 0 6px 16px;
+            padding: 0;
+        }
+        .review-note, .review-action { margin-top: 4px; color: #5b4e41; }
 
         /* Section progress (inside PDF step) */
         .section-grid {
@@ -262,12 +299,15 @@ const STEPS = [
     { id: 'parse',    icon: '📋', label: 'Parse project details',         sub: 'Reading your organization info' },
     { id: 'search',   icon: '🔍', label: 'Search for active grants',       sub: 'Scanning the web for opportunities' },
     { id: 'extract',  icon: '🎯', label: 'Identify best-matching grant',   sub: 'Analysing results' },
+    { id: 'grant_review', icon: '🧪', label: 'Review grant relevance',     sub: 'Checking fit, usefulness, and retry decisions' },
     { id: 'pdf',      icon: '📝', label: 'Generate proposal sections',     sub: 'Writing all 8 sections of your proposal' },
     { id: 'email',    icon: '✉️',  label: 'Draft outreach email',           sub: 'Crafting a personalised email' },
+    { id: 'content_review', icon: '🔎', label: 'Review proposal + email',  sub: 'Validating alignment with funder and organization' },
     { id: 'send',     icon: '📤', label: 'Send outreach email',            sub: 'Delivering via SMTP' },
     { id: 'calendar', icon: '📅', label: 'Create calendar deadline event', sub: 'Adding to Google Calendar' },
     { id: 'summary',  icon: '✅', label: 'Build final summary',            sub: 'Assembling results' },
 ];
+const REVIEWER_NODES = new Set(['grant_review', 'content_review']);
 
 const PROPOSAL_SECTIONS = [
     "Executive Summary",
@@ -319,6 +359,15 @@ function buildSteps() {
         grid.appendChild(chip);
     });
     extraPdf.appendChild(grid);
+
+    REVIEWER_NODES.forEach(nodeId => {
+        const extra = document.getElementById(`extra-${nodeId}`);
+        if (!extra) return;
+        const attempts = document.createElement('div');
+        attempts.className = 'review-attempts';
+        attempts.id = `review-attempts-${nodeId}`;
+        extra.appendChild(attempts);
+    });
 }
 
 function secId(name) {
@@ -330,22 +379,97 @@ function setStepActive(nodeId) {
     const el = document.getElementById(`step-${nodeId}`);
     if (el) {
         el.classList.add('active');
-        el.classList.remove('done', 'error');
+        el.classList.remove('done', 'warning', 'error');
         document.getElementById(`icon-${nodeId}`).textContent = '⏳';
     }
 }
 function setStepDone(nodeId, labelOverride) {
     const el = document.getElementById(`step-${nodeId}`);
     if (el) {
-        el.classList.remove('active');
+        el.classList.remove('active', 'warning', 'error');
         el.classList.add('done');
         document.getElementById(`icon-${nodeId}`).textContent = '✓';
         if (labelOverride) document.getElementById(`label-${nodeId}`).textContent = labelOverride;
     }
 }
+function setStepWarning(nodeId) {
+    const el = document.getElementById(`step-${nodeId}`);
+    if (el) {
+        el.classList.remove('active', 'done', 'error');
+        el.classList.add('warning');
+        document.getElementById(`icon-${nodeId}`).textContent = '!';
+    }
+}
+function setStepError(nodeId) {
+    const el = document.getElementById(`step-${nodeId}`);
+    if (el) {
+        el.classList.remove('active', 'done', 'warning');
+        el.classList.add('error');
+        document.getElementById(`icon-${nodeId}`).textContent = '✕';
+    }
+}
 function setStepSub(nodeId, text) {
     const sub = document.getElementById(`sub-${nodeId}`);
     if (sub) sub.textContent = text;
+}
+
+function mapReviewAction(action, nodeId, verdict) {
+    if (action === 'retry_search') return 'Retrying search';
+    if (action === 'retry_pdf') return 'Retrying proposal + email';
+    if (action === 'halt_manual_review') return 'Manual review required';
+    if (action === 'proceed' && nodeId === 'grant_review' && verdict === 'fail') {
+        return 'Proceeding with low-confidence grant fit';
+    }
+    return 'Proceeding to next step';
+}
+
+function appendReviewAttempt(d) {
+    const nodeId = d.node;
+    const host = document.getElementById(`review-attempts-${nodeId}`);
+    if (!host) return;
+
+    const verdict = (d.verdict || '').toLowerCase() === 'pass' ? 'pass' : 'fail';
+    const card = document.createElement('div');
+    card.className = `review-card ${verdict}`;
+
+    const header = document.createElement('div');
+    header.className = 'review-card-header';
+    const title = document.createElement('span');
+    title.textContent = `Attempt ${d.attempt || '?'} of ${d.max_attempts || '?'}`;
+    const badge = document.createElement('span');
+    badge.className = `review-badge ${verdict}`;
+    badge.textContent = verdict.toUpperCase();
+    header.appendChild(title);
+    header.appendChild(badge);
+    card.appendChild(header);
+
+    const score = document.createElement('div');
+    score.className = 'review-meta';
+    score.textContent = `Score: ${typeof d.score === 'number' ? d.score : 'N/A'} · ${mapReviewAction(d.next_action, nodeId, verdict)}`;
+    card.appendChild(score);
+
+    if (Array.isArray(d.reasons) && d.reasons.length > 0) {
+        const list = document.createElement('ul');
+        list.className = 'review-reasons';
+        d.reasons.forEach(reason => {
+            const li = document.createElement('li');
+            li.textContent = String(reason);
+            list.appendChild(li);
+        });
+        card.appendChild(list);
+    }
+
+    const notes = document.createElement('div');
+    notes.className = 'review-note';
+    notes.textContent = `Improvement notes: ${d.improvement_notes || 'N/A'}`;
+    card.appendChild(notes);
+
+    const action = document.createElement('div');
+    action.className = 'review-action';
+    action.textContent = `Next action: ${mapReviewAction(d.next_action, nodeId, verdict)}`;
+    card.appendChild(action);
+
+    host.appendChild(card);
 }
 
 // ── Section chip helpers ──────────────────────────────────────────────────────
@@ -376,10 +500,29 @@ function handleEvent(evt) {
         progressTitle.textContent = d.label || 'Working…';
     }
 
+    if (d.type === 'review_attempt') {
+        appendReviewAttempt(d);
+
+        const verdict = (d.verdict || '').toLowerCase();
+        const actionText = mapReviewAction(d.next_action, d.node, verdict);
+        setStepSub(d.node, `Score ${d.score ?? 'N/A'}/10 · ${actionText}`);
+
+        if (verdict === 'pass') {
+            setStepDone(d.node);
+        } else if (d.next_action === 'halt_manual_review') {
+            setStepError(d.node);
+        } else {
+            setStepWarning(d.node);
+        }
+    }
+
     if (d.type === 'node_done') {
         const nodeId = d.node === 'pdf_save' ? 'pdf' : d.node;
-        if (d.node !== 'pdf_save') {          // wait for pdf_save to mark pdf done
+        if (d.node !== 'pdf_save' && !REVIEWER_NODES.has(nodeId)) { // reviewer state is handled by review_attempt
             setStepDone(nodeId, d.label);
+        }
+        if (REVIEWER_NODES.has(nodeId) && d.label) {
+            setStepSub(nodeId, d.label);
         }
         if (d.funder) setStepSub('extract', `Funder: ${d.funder}` + (d.deadline ? ` · Deadline: ${d.deadline}` : ''));
     }
