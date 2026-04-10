@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, TypedDict
 
 from fpdf import FPDF
@@ -658,21 +658,89 @@ def calendar_node(state: GrantState):
     _emit({"type": "node_start", "node": "calendar", "label": "Adding grant deadline to Google Calendar..."})
     try:
         funder_info = _coerce_dict(state.get("funder_info") or {})
+        grant_name = str(funder_info.get("funder_name", "") or "").strip() or "grant opportunity"
         deadline = funder_info.get("deadline")
         bad_deadlines = ["none", "n/a", "unknown", "tbd", ""]
-        if not deadline or str(deadline).strip().lower() in bad_deadlines:
-            _emit({"type": "node_done", "node": "calendar", "label": "No valid deadline; calendar skipped"})
-            return {"calendar_event": "No valid deadline found. Event not created."}
+        deadline_text = str(deadline).strip() if deadline is not None else ""
+        deadline_reason = "no deadline was provided"
+        if deadline_text:
+            if deadline_text.lower() in bad_deadlines:
+                deadline_reason = f"the deadline value was '{deadline_text}'"
+            else:
+                deadline_reason = f"the deadline value '{deadline_text}' was not a valid YYYY-MM-DD date"
 
+        has_valid_deadline = False
+        if deadline_text and deadline_text.lower() not in bad_deadlines:
+            try:
+                datetime.fromisoformat(deadline_text)
+                has_valid_deadline = True
+            except Exception:
+                has_valid_deadline = False
+
+        if has_valid_deadline:
+            result = create_grant_deadline_event.invoke(
+                {
+                    "deadline_date": deadline_text,
+                    "title": f"{grant_name} Deadline",
+                    "application_url": "",
+                }
+            )
+            _emit({"type": "node_done", "node": "calendar", "label": "Calendar deadline event created"})
+            return {
+                "calendar_event": (
+                    f"Deadline event added to calendar for {grant_name} on {deadline_text}. "
+                    f"{str(result)}"
+                )
+            }
+
+        email_result = state.get("email_result") or {}
+        if isinstance(email_result, str):
+            email_result = {"status": email_result}
+        if not isinstance(email_result, dict):
+            email_result = {}
+
+        if str(email_result.get("status", "")).strip().lower() != "sent":
+            _emit({"type": "node_done", "node": "calendar", "label": "No deadline and no sent email; calendar skipped"})
+            return {
+                "calendar_event": (
+                    "No calendar event was added. "
+                    f"Reason: {deadline_reason}, and the outreach email was not sent yet."
+                )
+            }
+
+        sent_at_raw = str(email_result.get("sent_at", "") or "").strip()
+        sent_dt = datetime.now()
+        if sent_at_raw:
+            try:
+                sent_dt = datetime.fromisoformat(sent_at_raw.replace("Z", "+00:00"))
+            except Exception:
+                sent_dt = datetime.now()
+
+        follow_up_date = (sent_dt + timedelta(days=14)).date().isoformat()
         result = create_grant_deadline_event.invoke(
             {
-                "deadline_date": str(deadline).strip(),
-                "title": f"{funder_info.get('funder_name', 'Grant')} Deadline",
+                "deadline_date": follow_up_date,
+                "title": f"Follow up with {grant_name}",
                 "application_url": "",
+                "description": (
+                    f"No application deadline was available for {grant_name}.\n\n"
+                    f"Schedule follow-up outreach two weeks after first email sent ({sent_dt.date().isoformat()})."
+                ),
             }
         )
-        _emit({"type": "node_done", "node": "calendar", "label": "Calendar event created"})
-        return {"calendar_event": str(result)}
+        _emit(
+            {
+                "type": "node_done",
+                "node": "calendar",
+                "label": f"No deadline found; follow-up event created for {follow_up_date}",
+            }
+        )
+        return {
+            "calendar_event": (
+                f"Follow-up event added to calendar: 'Follow up with {grant_name}' on {follow_up_date}. "
+                f"Reason: {deadline_reason}. {str(result)}"
+            )
+        }
     except Exception as e:
         _emit({"type": "node_done", "node": "calendar", "label": f"Calendar error: {e}"})
         return {"calendar_event": f"Failed to create event: {str(e)}"}

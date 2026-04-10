@@ -290,6 +290,7 @@ def send_email(
             "to": recipient_email,
             "requested_to": to_email,
             "note": "Recipient enforced by guardrail.",
+            "sent_at": datetime.now().isoformat(timespec="seconds"),
         }
         if attached_file:
             result["attachment"] = attached_file
@@ -357,6 +358,7 @@ def create_grant_deadline_event(
     title: str,
     application_url: str = "",
     timezone: str = "America/Los_Angeles",
+    description: Optional[str] = None,
 ) -> str:
     """Create an all-day Google Calendar event for a grant deadline."""
     print("\n[Tool Executing] Creating calendar event for grant.")
@@ -364,11 +366,13 @@ def create_grant_deadline_event(
         service = _get_calendar_service()
         start_date = deadline_date
         end_date = (datetime.fromisoformat(deadline_date) + timedelta(days=1)).date().isoformat()
-        description = f"Grant deadline.\n\nApply: {application_url}" if application_url else "Grant deadline."
+        event_description = (description or "").strip()
+        if not event_description:
+            event_description = f"Grant deadline.\n\nApply: {application_url}" if application_url else "Grant deadline."
 
         event = {
             "summary": title,
-            "description": description,
+            "description": event_description,
             "start": {"date": start_date, "timeZone": timezone},
             "end": {"date": end_date, "timeZone": timezone},
         }
