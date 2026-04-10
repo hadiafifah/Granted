@@ -79,6 +79,30 @@
         }
         .form-group textarea { resize: vertical; min-height: 100px; }
 
+        .upload-btn {
+            width: auto;
+            padding: 10px 16px;
+            border: 1px solid #17181b;
+            border-radius: 20px;
+            background: #fff;
+            color: #17181b;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color .2s;
+        }
+        .upload-btn:hover { background: #efe9df; }
+        .upload-btn:disabled { opacity: .6; cursor: not-allowed; }
+        .standalone-upload-btn { margin-bottom: 6px; }
+        .upload-status {
+            margin: 0 0 24px;
+            font-size: 13px;
+            color: #62574a;
+        }
+        .upload-status.success { color: #2d7a51; }
+        .upload-status.error { color: #b34435; }
+        .upload-status.loading { color: #8a6123; }
+
         /* ── Buttons ── */
         .action-btn {
             width: 100%; padding: 18px 24px; border: none;
@@ -251,6 +275,9 @@
             <h2>Project Information</h2>
             <p>Provide your organization and project details to discover grants and generate a tailored proposal.</p>
         </div>
+        <button type="button" id="org-pdf-btn" class="upload-btn standalone-upload-btn">Upload PDF to Auto-Fill</button>
+        <input type="file" id="org-pdf-input" accept=".pdf,application/pdf" hidden>
+        <p id="org-pdf-status" class="upload-status">Optional: upload a PDF about your organization and we will prefill these fields for you to review.</p>
         <div class="form-group">
             <label for="org_name">Organization Name</label>
             <input type="text" id="org_name" placeholder="e.g. Green Earth Initiative" required>
@@ -332,6 +359,9 @@ const resultContent    = document.getElementById('result-content');
 const stepList         = document.getElementById('step-list');
 const mainSpinner      = document.getElementById('main-spinner');
 const progressTitle    = document.getElementById('progress-title');
+const orgPdfBtn        = document.getElementById('org-pdf-btn');
+const orgPdfInput      = document.getElementById('org-pdf-input');
+const orgPdfStatus     = document.getElementById('org-pdf-status');
 
 function getApiBaseUrl() {
     const apiInput = document.getElementById('api-url');
@@ -339,6 +369,70 @@ function getApiBaseUrl() {
     const raw = apiInput.value.trim();
     if (!raw) return '';
     return raw.replace(/\/submit(-stream)?$/, '').replace(/\/$/, '');
+}
+
+function setOrgPdfStatus(text, state = '') {
+    if (!orgPdfStatus) return;
+    orgPdfStatus.textContent = text;
+    orgPdfStatus.className = `upload-status${state ? ` ${state}` : ''}`;
+}
+
+async function extractDetailsFromPdf() {
+    const file = orgPdfInput?.files?.[0];
+    if (!file) return;
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+        setOrgPdfStatus('Please select a valid PDF file.', 'error');
+        orgPdfInput.value = '';
+        return;
+    }
+
+    const payload = new FormData();
+    payload.append('file', file);
+    const apiBase = getApiBaseUrl();
+    const endpoint = apiBase ? `${apiBase}/extract-org-details` : '/extract-org-details';
+
+    setOrgPdfStatus(`Extracting details from "${file.name}"...`, 'loading');
+    orgPdfBtn.disabled = true;
+
+    try {
+        const response = await fetch(endpoint, { method: 'POST', body: payload });
+        if (!response.ok) {
+            let msg = `HTTP ${response.status}`;
+            try {
+                const e = await response.json();
+                msg = e.detail || e.message || msg;
+            } catch (_) {}
+            throw new Error(msg);
+        }
+
+        const data = await response.json();
+        let filled = 0;
+        ['org_name', 'mission', 'goals', 'budget', 'timeline'].forEach(id => {
+            const value = String(data[id] || '').trim();
+            if (value) {
+                document.getElementById(id).value = value;
+                filled += 1;
+            }
+        });
+
+        if (filled > 0) {
+            setOrgPdfStatus(`Auto-filled ${filled} field${filled === 1 ? '' : 's'}. Please review and edit before submitting.`, 'success');
+        } else {
+            setOrgPdfStatus('No usable organization details were detected in this PDF. You can still fill the form manually.', 'error');
+        }
+    } catch (err) {
+        setOrgPdfStatus(`Could not extract details: ${err.message}`, 'error');
+    } finally {
+        orgPdfBtn.disabled = false;
+        orgPdfInput.value = '';
+    }
+}
+
+if (orgPdfBtn && orgPdfInput) {
+    orgPdfBtn.addEventListener('click', () => orgPdfInput.click());
+    orgPdfInput.addEventListener('change', extractDetailsFromPdf);
 }
 
 // ── Build step rows ───────────────────────────────────────────────────────────
@@ -726,6 +820,8 @@ function resetForm() {
     ['org_name','mission','goals','budget','timeline'].forEach(id => {
         document.getElementById(id).value = '';
     });
+    if (orgPdfInput) orgPdfInput.value = '';
+    setOrgPdfStatus('Optional: upload a PDF about your organization and we will prefill these fields for you to review.');
     resultContainer.style.display  = 'none';
     formContainer.style.display    = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
