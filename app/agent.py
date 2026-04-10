@@ -1,10 +1,13 @@
 ### `agent.py`
 import os
 import json
-import smtplib
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
+import base64
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
 from dotenv import load_dotenv
 from fpdf import FPDF
@@ -22,10 +25,19 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from datetime import timedelta
 
-load_dotenv()
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
-os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
-os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
+google_api_key = os.getenv("GOOGLE_API_KEY")
+tavily_api_key = os.getenv("TAVILY_API_KEY")
+
+if not google_api_key:
+    raise RuntimeError("GOOGLE_API_KEY missing. Check .env")
+if not tavily_api_key:
+    raise RuntimeError("TAVILY_API_KEY missing. Check .env")
+
+os.environ["GOOGLE_API_KEY"] = google_api_key
+os.environ["TAVILY_API_KEY"] = tavily_api_key
 print("✓ API keys configured successfully!")
 
 # Guardrail: all proposal emails must go to this fixed recipient.
@@ -227,10 +239,9 @@ def send_email(
     pdf_path: Optional[str] = "Grant_Proposal_Submission.pdf",
 ) -> Dict[str, str]:
     """
-    Sends an email using SMTP.
+    Sends an email using the Gmail API.
     """
     try:
-        # Hard guardrail: ignore any discovered or user-provided recipient.
         recipient_email = PROPOSAL_RECIPIENT_EMAIL
 
         if draft and (not subject or not body):
@@ -245,17 +256,56 @@ def send_email(
             }
 
         sender_email = (os.getenv("SMTP_SENDER_EMAIL") or "").strip()
-        sender_password = (os.getenv("SMTP_APP_PASSWORD") or "").strip()
 
-        if not sender_email or not sender_password:
-            return {
-                "status": "error",
-                "message": (
-                    "Missing SMTP_SENDER_EMAIL or SMTP_APP_PASSWORD in environment. "
-                    f"Detected env presence: SMTP_SENDER_EMAIL={_is_env_present('SMTP_SENDER_EMAIL')}, "
-                    f"SMTP_APP_PASSWORD={_is_env_present('SMTP_APP_PASSWORD')}"
-                ),
-            }
+        attached_file = None
+        if attach_proposal_pdf:
+            path_to_attach = (pdf_path or "Grant_Proposal_Submission.pdf").strip()
+            if not os.path.exists(path_to_attach):
+                return {
+                    "status": "error",
+                    "message": f"Attachment not found: {path_to_attach}",
+                }
+            attached_file = path_to_attach
+
+        message = MIMEMultipart()
+        message["To"] = recipient_email
+        message["Subject"] = subject
+
+        if sender_email:
+            message["From"] = sender_email
+
+        message.attach(MIMEText(body, "plain"))
+
+        if attach_proposal_pdf and attached_file:
+            with open(attached_file, "rb") as f:
+                part = MIMEApplication(f.read(), _subtype="pdf")
+                part.add_header(
+                    "Content-Disposition",
+                    "attachment",
+                    filename=os.path.basename(attached_file),
+                )
+                message.attach(part)
+
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        service = _get_gmail_service()
+        service.users().messages().send(
+            userId="me",
+            body={"raw": raw_message}
+        ).execute()
+
+        result = {
+            "status": "sent",
+            "to": recipient_email,
+            "requested_to": to_email,
+            "note": "Recipient enforced by guardrail.",
+        }
+        if attached_file:
+            result["attachment"] = attached_file
+        return result
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -281,9 +331,32 @@ def send_email(
             )
             attached_file = path_to_attach
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient_email, msg.as_string())
+        message = MIMEMultipart()
+        message["To"] = recipient_email
+        message["Subject"] = subject
+
+        if sender_email:
+            message["From"] = sender_email
+
+        message.attach(MIMEText(body, "plain"))
+
+        if attach_proposal_pdf and attached_file:
+            with open(attached_file, "rb") as f:
+                part = MIMEApplication(f.read(), _subtype="pdf")
+                part.add_header(
+                    "Content-Disposition",
+                    "attachment",
+                    filename=os.path.basename(attached_file),
+                )
+                message.attach(part)
+
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        service = _get_gmail_service()
+        service.users().messages().send(
+            userId="me",
+            body={"raw": raw_message}
+        ).execute()
 
         result = {
             "status": "sent",
@@ -298,8 +371,11 @@ def send_email(
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# Tool 4: Google Calendar API tool
-SCOPES =["https://www.googleapis.com/auth/calendar.events"]
+# Tool 4: Google Calendar API tool and Email
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 
 def _get_calendar_service():
     creds = None
@@ -350,6 +426,27 @@ def _get_calendar_service():
         with open(token_save_path, "w") as token:
             token.write(creds.to_json())
     return build("calendar", "v3", credentials=creds)
+
+def _get_gmail_service():
+    creds = None
+
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if os.path.exists("credentials.json"):
+                flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+                creds = flow.run_local_server(port=0)
+            else:
+                raise RuntimeError("Missing credentials.json for Gmail API")
+
+        with open("token.json", "w") as token:
+            token.write(creds.to_json())
+
+    return build("gmail", "v1", credentials=creds)
 
 @tool
 def create_grant_deadline_event(
