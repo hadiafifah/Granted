@@ -16,7 +16,7 @@ from app.agent import (
 )
 
 # Retry policy defaults
-MAX_SEARCH_RETRIES = 2
+MAX_SEARCH_RETRIES = 5
 MAX_CONTENT_RETRIES = 2
 
 # streaming queue (module-level, set before each run)
@@ -74,10 +74,61 @@ def _listify_text(value) -> str:
     return ""
 
 
+def _score_to_match_percent(score_value) -> int:
+    try:
+        score = float(score_value)
+    except Exception:
+        score = 0.0
+    score = max(0.0, min(10.0, score))
+    return int(round(score * 10))
+
+
+def _coerce_match_percent(match_value, fallback_score=0) -> int:
+    try:
+        match_percent = int(round(float(match_value)))
+    except Exception:
+        return _score_to_match_percent(fallback_score)
+    if 0 <= match_percent <= 100:
+        return match_percent
+    return _score_to_match_percent(fallback_score)
+
+
+def _pick_better_grant_candidate(
+    current_funder: Dict,
+    current_review: Dict,
+    best_funder: Dict,
+    best_review: Dict,
+) -> bool:
+    """Return True when the current attempt should become the best-known grant candidate."""
+    if not best_review:
+        return True
+
+    current_score = max(0, min(10, int(current_review.get("score", 0) or 0)))
+    best_score = max(0, min(10, int(best_review.get("score", 0) or 0)))
+    if current_score != best_score:
+        return current_score > best_score
+
+    current_verdict = _normalize_verdict(current_review.get("verdict"), default="fail")
+    best_verdict = _normalize_verdict(best_review.get("verdict"), default="fail")
+    if current_verdict != best_verdict:
+        return current_verdict == "pass"
+
+    current_name = str(current_funder.get("funder_name", "") or "").strip()
+    best_name = str(best_funder.get("funder_name", "") or "").strip()
+    if bool(current_name) != bool(best_name):
+        return bool(current_name)
+
+    # Stable tie-breaker: keep the earlier best entry.
+    return False
+
+
 class GrantState(TypedDict):
     user_input: str
     project_details: Optional[str]
     funder_info: Optional[Dict]
+    best_funder_info: Optional[Dict]
+    best_grant_review: Optional[Dict]
+    best_grant_attempt: Optional[int]
     proposal_pdf_path: Optional[str]
     proposal_text: Optional[str]
     email_draft: Optional[str]
@@ -129,6 +180,9 @@ Only return the search query text. Do not use quotes or introductory text.
         "search_attempts": 0,
         "content_attempts": 0,
         "grant_review": None,
+        "best_funder_info": None,
+        "best_grant_review": None,
+        "best_grant_attempt": None,
         "content_review": None,
         "refined_search_query": None,
         "halt_reason": None,
@@ -265,6 +319,7 @@ Rules:
 
     review["verdict"] = _normalize_verdict(review.get("verdict"), default="fail")
     review["score"] = int(review.get("score", 0) or 0)
+    review["match_percent"] = _score_to_match_percent(review["score"])
     review["reasons"] = review.get("reasons") if isinstance(review.get("reasons"), list) else []
     review["improvement_notes"] = str(review.get("improvement_notes", "") or "").strip()
 
@@ -283,34 +338,70 @@ Rules:
     else:
         next_action = "proceed"
 
+    best_funder_info = _coerce_dict(state.get("best_funder_info") or {})
+    best_grant_review = _coerce_dict(state.get("best_grant_review") or {})
+    best_grant_attempt = int(state.get("best_grant_attempt") or 0)
+
+    if _pick_better_grant_candidate(funder_info, review, best_funder_info, best_grant_review):
+        best_funder_info = dict(funder_info)
+        best_grant_review = dict(review)
+        best_grant_attempt = attempts
+
+    selected_funder_info = funder_info
+    selected_review = review
+    selected_attempt = attempts
+    if next_action == "proceed" and review["verdict"] != "pass" and best_grant_review:
+        selected_funder_info = best_funder_info or funder_info
+        selected_review = best_grant_review
+        selected_attempt = best_grant_attempt or attempts
+
     _emit(
         {
             "type": "review_attempt",
             "node": "grant_review",
             "attempt": attempts,
             "max_attempts": MAX_SEARCH_RETRIES,
+            "grant_name": funder_info.get("funder_name", "Unknown Grant"),
             "verdict": review["verdict"],
             "score": review["score"],
+            "match_percent": review["match_percent"],
             "reasons": review["reasons"],
             "improvement_notes": review["improvement_notes"],
             "next_action": next_action,
         }
     )
 
+    selected_match = _coerce_match_percent(
+        selected_review.get("match_percent"),
+        selected_review.get("score", 0),
+    )
+    selected_name = str(selected_funder_info.get("funder_name", "Unknown Grant") or "Unknown Grant")
+    label = f"Grant review complete: {review['match_percent']}% match (attempt {attempts}/{MAX_SEARCH_RETRIES})"
+    if next_action == "proceed" and review["verdict"] != "pass":
+        label = (
+            f"No passing grant found. Using best attempt {selected_attempt}: "
+            f"{selected_match}% match ({selected_name})"
+        )
+
     _emit(
         {
             "type": "node_done",
             "node": "grant_review",
-            "label": (
-                f"Grant review: PASS ({review['score']}/10)"
-                if review["verdict"] == "pass"
-                else f"Grant review: FAIL ({review['score']}/10), attempt {attempts}/{MAX_SEARCH_RETRIES}"
-            ),
-            "verdict": review["verdict"],
-            "score": review["score"],
+            "label": label,
+            "funder": selected_name,
+            "verdict": selected_review.get("verdict", review["verdict"]),
+            "score": selected_review.get("score", review["score"]),
+            "match_percent": selected_match,
         }
     )
-    return {"grant_review": review, "refined_search_query": refined_query}
+    return {
+        "grant_review": selected_review,
+        "funder_info": selected_funder_info,
+        "refined_search_query": refined_query,
+        "best_funder_info": best_funder_info,
+        "best_grant_review": best_grant_review,
+        "best_grant_attempt": best_grant_attempt,
+    }
 
 
 def route_after_grant_review(state: GrantState) -> str:
@@ -393,13 +484,7 @@ INSTRUCTIONS:
     pdf_file_name = "Grant_Proposal_Submission.pdf"
     pdf.output(pdf_file_name)
 
-    low_confidence = (
-        _normalize_verdict(grant_review.get("verdict"), default="fail") != "pass"
-        and int(state.get("search_attempts") or 0) >= MAX_SEARCH_RETRIES
-    )
     label = "Proposal PDF saved"
-    if low_confidence:
-        label = "Proposal PDF saved (low-confidence grant fit)"
     _emit({"type": "node_done", "node": "pdf", "label": label})
 
     return {"proposal_pdf_path": pdf_file_name, "proposal_text": formatted_text}
@@ -490,6 +575,7 @@ Rules:
     )
     review["verdict"] = _normalize_verdict(review.get("verdict"), default="fail")
     review["score"] = int(review.get("score", 0) or 0)
+    review["match_percent"] = _score_to_match_percent(review["score"])
     review["reasons"] = review.get("reasons") if isinstance(review.get("reasons"), list) else []
     review["improvement_notes"] = str(review.get("improvement_notes", "") or "").strip()
 
@@ -503,7 +589,7 @@ Rules:
 
     if review["verdict"] != "pass" and attempts >= MAX_CONTENT_RETRIES:
         halt_reason = (
-            "Content review failed after max retries. Manual review required before sending outreach."
+            "Content quality threshold was not reached after max retries. Manual review is required before sending outreach."
         )
 
     _emit(
@@ -512,8 +598,10 @@ Rules:
             "node": "content_review",
             "attempt": attempts,
             "max_attempts": MAX_CONTENT_RETRIES,
+            "grant_name": funder_info.get("funder_name", "Unknown Grant"),
             "verdict": review["verdict"],
             "score": review["score"],
+            "match_percent": review["match_percent"],
             "reasons": review["reasons"],
             "improvement_notes": review["improvement_notes"],
             "next_action": next_action,
@@ -524,13 +612,10 @@ Rules:
         {
             "type": "node_done",
             "node": "content_review",
-            "label": (
-                f"Content review: PASS ({review['score']}/10)"
-                if review["verdict"] == "pass"
-                else f"Content review: FAIL ({review['score']}/10), attempt {attempts}/{MAX_CONTENT_RETRIES}"
-            ),
+            "label": f"Content review complete: {review['match_percent']}% match (attempt {attempts}/{MAX_CONTENT_RETRIES})",
             "verdict": review["verdict"],
             "score": review["score"],
+            "match_percent": review["match_percent"],
         }
     )
 
@@ -619,9 +704,8 @@ def summary_node(state: GrantState):
         grant_attempts = int(state.get("search_attempts") or 0)
         content_attempts = int(state.get("content_attempts") or 0)
         grant_verdict = _normalize_verdict(grant_review.get("verdict"), default="fail")
-        content_verdict = _normalize_verdict(content_review.get("verdict"), default="fail")
-
-        low_confidence = grant_verdict != "pass" and grant_attempts >= MAX_SEARCH_RETRIES
+        grant_match = _coerce_match_percent(grant_review.get("match_percent"), grant_review.get("score", 0))
+        content_match = _coerce_match_percent(content_review.get("match_percent"), content_review.get("score", 0))
         halt_reason = (state.get("halt_reason") or "").strip()
         email_status = email_result.get("status", "N/A")
         calendar_status = state.get("calendar_event", "N/A")
@@ -636,13 +720,13 @@ def summary_node(state: GrantState):
             f"**Summary:** {funder_info.get('summary', 'N/A')}\n\n"
             "---\n\n"
             "## Review Gates\n\n"
-            f"**Grant Review:** {grant_verdict.upper()} ({grant_review.get('score', 'N/A')}/10), attempts: {grant_attempts}\n\n"
+            f"**Grant Match:** {grant_match}% (attempts: {grant_attempts}/{MAX_SEARCH_RETRIES})\n\n"
             f"{_listify_text(grant_review.get('reasons'))}\n\n"
             f"**Grant Reviewer Notes:** {grant_review.get('improvement_notes', 'N/A')}\n\n"
-            f"**Content Review:** {content_verdict.upper()} ({content_review.get('score', 'N/A')}/10), attempts: {content_attempts}\n\n"
+            f"**Content Match:** {content_match}% (attempts: {content_attempts}/{MAX_CONTENT_RETRIES})\n\n"
             f"{_listify_text(content_review.get('reasons'))}\n\n"
             f"**Content Reviewer Notes:** {content_review.get('improvement_notes', 'N/A')}\n\n"
-            f"**Low-Confidence Grant Fit:** {'Yes' if low_confidence else 'No'}\n\n"
+            f"**Grant Search Confidence Note:** {'Best available grant match selected after max search attempts.' if grant_verdict != 'pass' and grant_attempts >= MAX_SEARCH_RETRIES else ('Grant match accepted on the final search attempt.' if grant_verdict == 'pass' and grant_attempts >= MAX_SEARCH_RETRIES else 'Grant match selected before reaching max search attempts.')}\n\n"
             "---\n\n"
             "## Proposal\n\n"
             "Your tailored proposal has been generated.\n\n"

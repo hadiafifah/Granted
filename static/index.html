@@ -174,6 +174,7 @@
         .review-badge.pass { background: #2d7a51; }
         .review-badge.fail { background: #b86b1a; }
         .review-meta { color: #6c6257; margin-bottom: 6px; }
+        .review-grant { color: #564c42; margin-bottom: 6px; font-weight: 600; }
         .review-reasons {
             margin: 0 0 6px 16px;
             padding: 0;
@@ -413,12 +414,25 @@ function setStepSub(nodeId, text) {
     if (sub) sub.textContent = text;
 }
 
+function getMatchPercent(d) {
+    const raw = d.match_percent;
+    if (typeof raw === 'number' && raw >= 0 && raw <= 100) {
+        return Math.round(raw);
+    }
+    const score = typeof d.score === 'number' ? d.score : Number(d.score);
+    if (!Number.isNaN(score)) {
+        const clamped = Math.max(0, Math.min(10, score));
+        return Math.round(clamped * 10);
+    }
+    return 0;
+}
+
 function mapReviewAction(action, nodeId, verdict) {
-    if (action === 'retry_search') return 'Retrying search';
-    if (action === 'retry_pdf') return 'Retrying proposal + email';
+    if (action === 'retry_search') return 'Searching again for a better match';
+    if (action === 'retry_pdf') return 'Regenerating proposal and email';
     if (action === 'halt_manual_review') return 'Manual review required';
     if (action === 'proceed' && nodeId === 'grant_review' && verdict === 'fail') {
-        return 'Proceeding with low-confidence grant fit';
+        return 'Proceeding with best available grant match';
     }
     return 'Proceeding to next step';
 }
@@ -434,19 +448,28 @@ function appendReviewAttempt(d) {
 
     const header = document.createElement('div');
     header.className = 'review-card-header';
+    const matchPercent = getMatchPercent(d);
     const title = document.createElement('span');
     title.textContent = `Attempt ${d.attempt || '?'} of ${d.max_attempts || '?'}`;
     const badge = document.createElement('span');
     badge.className = `review-badge ${verdict}`;
-    badge.textContent = verdict.toUpperCase();
+    badge.textContent = `MATCH ${matchPercent}%`;
     header.appendChild(title);
     header.appendChild(badge);
     card.appendChild(header);
 
     const score = document.createElement('div');
     score.className = 'review-meta';
-    score.textContent = `Score: ${typeof d.score === 'number' ? d.score : 'N/A'} · ${mapReviewAction(d.next_action, nodeId, verdict)}`;
+    score.textContent = `Match: ${matchPercent}% · ${mapReviewAction(d.next_action, nodeId, verdict)}`;
     card.appendChild(score);
+
+    const grantName = typeof d.grant_name === 'string' && d.grant_name.trim()
+        ? d.grant_name.trim()
+        : 'Unknown Grant';
+    const grant = document.createElement('div');
+    grant.className = 'review-grant';
+    grant.textContent = `Grant: ${grantName}`;
+    card.appendChild(grant);
 
     if (Array.isArray(d.reasons) && d.reasons.length > 0) {
         const list = document.createElement('ul');
@@ -504,8 +527,14 @@ function handleEvent(evt) {
         appendReviewAttempt(d);
 
         const verdict = (d.verdict || '').toLowerCase();
+        const matchPercent = getMatchPercent(d);
         const actionText = mapReviewAction(d.next_action, d.node, verdict);
-        setStepSub(d.node, `Score ${d.score ?? 'N/A'}/10 · ${actionText}`);
+        setStepSub(d.node, `Match ${matchPercent}% · ${actionText}`);
+
+        if (d.node === 'grant_review' && d.next_action === 'retry_search') {
+            setStepActive('search');
+            setStepSub('search', 'Searching again for a better match');
+        }
 
         if (verdict === 'pass') {
             setStepDone(d.node);
