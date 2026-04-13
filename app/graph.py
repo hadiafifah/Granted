@@ -877,9 +877,18 @@ def route_after_content_review(state: GrantState) -> str:
 def send_node(state: GrantState):
     _emit({"type": "node_start", "node": "send", "label": "Sending outreach email..."})
     try:
-        result = send_email.invoke({"to_email": "ignored@example.com", "draft": state.get("email_draft", "")})
+        result = send_email.invoke(
+            {
+                "to_email": "ignored@example.com",
+                "draft": state.get("email_draft", ""),
+            }
+        )
+
         if not isinstance(result, dict):
             result = {"status": str(result)}
+
+        print("SEND NODE RESULT:", result, flush=True)
+
         status = result.get("status", "unknown")
         _emit(
             {
@@ -888,8 +897,11 @@ def send_node(state: GrantState):
                 "label": f"Email {status}" if status == "sent" else f"Email status: {status}",
             }
         )
+
         return {"email_result": result}
+
     except Exception as e:
+        print("SEND NODE ERROR:", repr(e), flush=True)
         _emit({"type": "node_done", "node": "send", "label": f"Email send error: {e}"})
         return {"email_result": {"status": "error", "message": str(e)}}
 
@@ -1017,9 +1029,10 @@ def summary_node(state: GrantState):
         content_match = _coerce_match_percent(content_review.get("match_percent"), content_review.get("score", 0))
         halt_reason = (state.get("halt_reason") or "").strip()
         email_status = email_result.get("status", "N/A")
+        email_message = email_result.get("message", "")
         calendar_status = state.get("calendar_event", "N/A")
 
-        summary = (
+        summary =(
             "## Grant Summary\n\n"
             f"**Funder:** {funder_info.get('funder_name', 'N/A')}\n\n"
             f"**Source URL:** {funder_info.get('source_url', 'N/A')}\n\n"
@@ -1046,7 +1059,8 @@ def summary_node(state: GrantState):
             "---\n\n"
             "## Email Status\n\n"
             f"**Status:** {email_status}\n\n"
-            "---\n\n"
+            + (f"**Message:** {email_message}\n\n" if email_message else "")
+            + "---\n\n"
             "## Calendar\n\n"
             f"**Status:** {calendar_status}\n\n"
             "---\n\n"

@@ -5,13 +5,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
 import base64
+import resend
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 
 from dotenv import load_dotenv
 from email.message import EmailMessage
-
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain.tools import tool
@@ -24,14 +24,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from datetime import timedelta
 
-<<<<<<< HEAD
 from pathlib import Path
-load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
-=======
 from app.pdf_utils import render_proposal_pdf
 
-load_dotenv()
->>>>>>> origin/main
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 google_api_key = os.getenv("GOOGLE_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
@@ -46,7 +42,7 @@ os.environ["TAVILY_API_KEY"] = tavily_api_key
 print("✓ API keys configured successfully!")
 
 # Guardrail: all proposal emails must go to this fixed recipient.
-PROPOSAL_RECIPIENT_EMAIL = "anhadi@ucdavis.edu"
+PROPOSAL_RECIPIENT_EMAIL = "chaner@whitman.edu"
 
 def _is_env_present(name: str) -> bool:
     return bool((os.getenv(name) or "").strip())
@@ -228,7 +224,8 @@ def send_email(
     pdf_path: Optional[str] = "Grant_Proposal_Submission.pdf",
 ) -> Dict[str, str]:
     """
-    Sends an email using the Gmail API.
+    Sends an email using the Resend API.
+    The recipient is always enforced by the guardrail email.
     """
     try:
         recipient_email = PROPOSAL_RECIPIENT_EMAIL
@@ -244,121 +241,72 @@ def send_email(
                 "message": "Missing subject/body. Provide them directly or pass `draft` from generate_email_draft.",
             }
 
-        sender_email = (os.getenv("SMTP_SENDER_EMAIL") or "").strip()
+        resend_api_key = (os.getenv("RESEND_API_KEY") or "").strip()
+        sender_email = (os.getenv("RESEND_FROM_EMAIL") or "").strip()
 
-        attached_file = None
-        if attach_proposal_pdf:
-            path_to_attach = (pdf_path or "Grant_Proposal_Submission.pdf").strip()
-            if not os.path.exists(path_to_attach):
-                return {
-                    "status": "error",
-                    "message": f"Attachment not found: {path_to_attach}",
-                }
-            attached_file = path_to_attach
+        if not resend_api_key:
+            return {
+                "status": "error",
+                "message": "Missing RESEND_API_KEY in environment.",
+            }
 
-        message = MIMEMultipart()
-        message["To"] = recipient_email
-        message["Subject"] = subject
+        if not sender_email:
+            return {
+                "status": "error",
+                "message": "Missing RESEND_FROM_EMAIL in environment.",
+            }
 
-        if sender_email:
-            message["From"] = sender_email
+        resend.api_key = resend_api_key
 
-        message.attach(MIMEText(body, "plain"))
-
-        if attach_proposal_pdf and attached_file:
-            with open(attached_file, "rb") as f:
-                part = MIMEApplication(f.read(), _subtype="pdf")
-                part.add_header(
-                    "Content-Disposition",
-                    "attachment",
-                    filename=os.path.basename(attached_file),
-                )
-                message.attach(part)
-
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-
-        service = _get_gmail_service()
-        service.users().messages().send(
-            userId="me",
-            body={"raw": raw_message}
-        ).execute()
-
-        result = {
-            "status": "sent",
-            "to": recipient_email,
-            "requested_to": to_email,
-            "note": "Recipient enforced by guardrail.",
+        params = {
+            "from": sender_email,
+            "to": [recipient_email],
+            "subject": subject,
+            "text": body,
         }
-        if attached_file:
-            result["attachment"] = attached_file
-        return result
-
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = sender_email
-        msg["To"] = recipient_email
-        msg.set_content(body)
 
         attached_file = None
+
         if attach_proposal_pdf:
             path_to_attach = (pdf_path or "Grant_Proposal_Submission.pdf").strip()
+
             if not os.path.exists(path_to_attach):
                 return {
                     "status": "error",
                     "message": f"Attachment not found: {path_to_attach}",
                 }
+
             with open(path_to_attach, "rb") as f:
                 pdf_bytes = f.read()
-            msg.add_attachment(
-                pdf_bytes,
-                maintype="application",
-                subtype="pdf",
-                filename=os.path.basename(path_to_attach),
-            )
+
+            params["attachments"] = [
+                {
+                    "filename": os.path.basename(path_to_attach),
+                    "content": base64.b64encode(pdf_bytes).decode("utf-8"),
+                }
+            ]
             attached_file = path_to_attach
 
-        message = MIMEMultipart()
-        message["To"] = recipient_email
-        message["Subject"] = subject
+        result = resend.Emails.send(params)
 
-        if sender_email:
-            message["From"] = sender_email
-
-        message.attach(MIMEText(body, "plain"))
-
-        if attach_proposal_pdf and attached_file:
-            with open(attached_file, "rb") as f:
-                part = MIMEApplication(f.read(), _subtype="pdf")
-                part.add_header(
-                    "Content-Disposition",
-                    "attachment",
-                    filename=os.path.basename(attached_file),
-                )
-                message.attach(part)
-
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-
-        service = _get_gmail_service()
-        service.users().messages().send(
-            userId="me",
-            body={"raw": raw_message}
-        ).execute()
-
-        result = {
+        response = {
             "status": "sent",
             "to": recipient_email,
             "requested_to": to_email,
             "note": "Recipient enforced by guardrail.",
-            "sent_at": datetime.now().isoformat(timespec="seconds"),
+            "provider": "resend",
         }
+
+        if isinstance(result, dict) and result.get("id"):
+            response["message_id"] = str(result["id"])
+
         if attached_file:
-            result["attachment"] = attached_file
-        return result
+            response["attachment"] = attached_file
+
+        return response
 
     except Exception as e:
+        print("EMAIL ERROR:", repr(e))
         return {"status": "error", "message": str(e)}
 
 # Tool 4: Google Calendar API tool and Email
@@ -417,26 +365,6 @@ def _get_calendar_service():
             token.write(creds.to_json())
     return build("calendar", "v3", credentials=creds)
 
-def _get_gmail_service():
-    creds = None
-
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if os.path.exists("credentials.json"):
-                flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-                creds = flow.run_local_server(port=0)
-            else:
-                raise RuntimeError("Missing credentials.json for Gmail API")
-
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
-
-    return build("gmail", "v1", credentials=creds)
 
 @tool
 def create_grant_deadline_event(
