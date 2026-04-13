@@ -30,16 +30,18 @@
             padding: 24px 34px;
             flex-wrap: wrap;
         }
-        .brand-block { display: flex; align-items: baseline; gap: 24px; }
+        .brand-block { display: flex; align-items: center; gap: 24px; }
         .header { margin: 0; }
         .header h1 { color: #1d1d1f; margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
         .header p  { color: #3d3024; margin: 0; font-size: 1.05em; }
-        .config-container { margin: 0; display: flex; align-items: center; gap: 16px; }
-        .config-container label { font-size: 0.95em; color: #33291f; font-weight: 600; }
-        .config-container input {
-            padding: 8px 12px; border-radius: 12px;
-            border: 1px solid #bc9369; background-color: #f3dfcb;
-            color: #2a2a2a; width: 300px; outline: none;
+        .brand-title { display: flex; align-items: center; gap: 12px; color: #1d1d1f; }
+        .brand-logo {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            background-color: currentColor;
+            -webkit-mask: url('granted_logo.png') center / contain no-repeat;
+            mask: url('granted_logo.png') center / contain no-repeat;
         }
 
         /* ── Main container ── */
@@ -76,6 +78,30 @@
             border-color: #d18b3f; background-color: #fff;
         }
         .form-group textarea { resize: vertical; min-height: 100px; }
+
+        .upload-btn {
+            width: auto;
+            padding: 10px 16px;
+            border: 1px solid #17181b;
+            border-radius: 20px;
+            background: #fff;
+            color: #17181b;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color .2s;
+        }
+        .upload-btn:hover { background: #efe9df; }
+        .upload-btn:disabled { opacity: .6; cursor: not-allowed; }
+        .standalone-upload-btn { margin-bottom: 6px; }
+        .upload-status {
+            margin: 0 0 24px;
+            font-size: 13px;
+            color: #62574a;
+        }
+        .upload-status.success { color: #2d7a51; }
+        .upload-status.error { color: #b34435; }
+        .upload-status.loading { color: #8a6123; }
 
         /* ── Buttons ── */
         .action-btn {
@@ -122,6 +148,7 @@
         }
         .step.active  { opacity: 1; background: #fff8f0; border-color: #d18b3f; }
         .step.done    { opacity: 1; background: #f4faf6; border-color: #7ec8a0; }
+        .step.warning { opacity: 1; background: #fff8ef; border-color: #e2a85f; }
         .step.error   { opacity: 1; background: #fff4f4; border-color: #e88; }
 
         .step-icon {
@@ -133,6 +160,7 @@
         }
         .step.active .step-icon { background: #d18b3f; animation: pulse 1.2s ease-in-out infinite; }
         .step.done  .step-icon  { background: #4caf7d; }
+        .step.warning .step-icon { background: #d5964a; }
         .step.error .step-icon  { background: #e55; }
         @keyframes pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(209,139,63,.4); }
@@ -142,6 +170,42 @@
         .step-body { flex: 1; }
         .step-label { font-weight: 600; font-size: 15px; color: #1d1d1f; }
         .step-sub   { font-size: 13px; color: #7b7265; margin-top: 3px; }
+
+        /* Reviewer attempt trace */
+        .review-attempts { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+        .review-card {
+            border: 1px solid #d8d0c5;
+            border-radius: 10px;
+            background: #faf7f2;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #3f372f;
+        }
+        .review-card.pass { border-color: #7ec8a0; background: #f4faf6; }
+        .review-card.fail { border-color: #e2a85f; background: #fff8ef; }
+        .review-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        .review-badge {
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 11px;
+            color: #fff;
+        }
+        .review-badge.pass { background: #2d7a51; }
+        .review-badge.fail { background: #b86b1a; }
+        .review-meta { color: #6c6257; margin-bottom: 6px; }
+        .review-grant { color: #564c42; margin-bottom: 6px; font-weight: 600; }
+        .review-reasons {
+            margin: 0 0 6px 16px;
+            padding: 0;
+        }
+        .review-note, .review-action { margin-top: 4px; color: #5b4e41; }
 
         /* Section progress (inside PDF step) */
         .section-grid {
@@ -193,12 +257,13 @@
 
 <div class="top-nav">
     <div class="brand-block">
-        <div class="header"><h1>Granted</h1></div>
+        <div class="header">
+            <h1 class="brand-title">
+                <span class="brand-logo" aria-hidden="true"></span>
+                <span>Granted</span>
+            </h1>
+        </div>
         <div class="header"><p>End-to-End Grant Discovery &amp; Proposal Assistant</p></div>
-    </div>
-    <div class="config-container">
-        <label for="api-url">API URL (Optional):</label>
-        <input type="text" id="api-url" placeholder="Leave blank for relative /submit-stream">
     </div>
 </div>
 
@@ -210,6 +275,9 @@
             <h2>Project Information</h2>
             <p>Provide your organization and project details to discover grants and generate a tailored proposal.</p>
         </div>
+        <button type="button" id="org-pdf-btn" class="upload-btn standalone-upload-btn">Upload PDF to Auto-Fill</button>
+        <input type="file" id="org-pdf-input" accept=".pdf,application/pdf" hidden>
+        <p id="org-pdf-status" class="upload-status">Optional: upload a PDF about your organization and we will prefill these fields for you to review.</p>
         <div class="form-group">
             <label for="org_name">Organization Name</label>
             <input type="text" id="org_name" placeholder="e.g. Green Earth Initiative" required>
@@ -262,12 +330,19 @@ const STEPS = [
     { id: 'parse',    icon: '📋', label: 'Parse project details',         sub: 'Reading your organization info' },
     { id: 'search',   icon: '🔍', label: 'Search for active grants',       sub: 'Scanning the web for opportunities' },
     { id: 'extract',  icon: '🎯', label: 'Identify best-matching grant',   sub: 'Analysing results' },
+    { id: 'grant_review', icon: '🧪', label: 'Review grant relevance',     sub: 'Checking fit, usefulness, and retry decisions' },
     { id: 'pdf',      icon: '📝', label: 'Generate proposal sections',     sub: 'Writing all 8 sections of your proposal' },
     { id: 'email',    icon: '✉️',  label: 'Draft outreach email',           sub: 'Crafting a personalised email' },
+<<<<<<< HEAD
     { id: 'send',     icon: '📤', label: 'Send outreach email',            sub: 'Sending via Gmail API' },
+=======
+    { id: 'content_review', icon: '🔎', label: 'Review proposal + email',  sub: 'Validating alignment with funder and organization' },
+    { id: 'send',     icon: '📤', label: 'Send outreach email',            sub: 'Delivering via SMTP' },
+>>>>>>> origin/main
     { id: 'calendar', icon: '📅', label: 'Create calendar deadline event', sub: 'Adding to Google Calendar' },
     { id: 'summary',  icon: '✅', label: 'Build final summary',            sub: 'Assembling results' },
 ];
+const REVIEWER_NODES = new Set(['grant_review', 'content_review']);
 
 const PROPOSAL_SECTIONS = [
     "Executive Summary",
@@ -288,6 +363,81 @@ const resultContent    = document.getElementById('result-content');
 const stepList         = document.getElementById('step-list');
 const mainSpinner      = document.getElementById('main-spinner');
 const progressTitle    = document.getElementById('progress-title');
+const orgPdfBtn        = document.getElementById('org-pdf-btn');
+const orgPdfInput      = document.getElementById('org-pdf-input');
+const orgPdfStatus     = document.getElementById('org-pdf-status');
+
+function getApiBaseUrl() {
+    const apiInput = document.getElementById('api-url');
+    if (!apiInput) return '';
+    const raw = apiInput.value.trim();
+    if (!raw) return '';
+    return raw.replace(/\/submit(-stream)?$/, '').replace(/\/$/, '');
+}
+
+function setOrgPdfStatus(text, state = '') {
+    if (!orgPdfStatus) return;
+    orgPdfStatus.textContent = text;
+    orgPdfStatus.className = `upload-status${state ? ` ${state}` : ''}`;
+}
+
+async function extractDetailsFromPdf() {
+    const file = orgPdfInput?.files?.[0];
+    if (!file) return;
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+        setOrgPdfStatus('Please select a valid PDF file.', 'error');
+        orgPdfInput.value = '';
+        return;
+    }
+
+    const payload = new FormData();
+    payload.append('file', file);
+    const apiBase = getApiBaseUrl();
+    const endpoint = apiBase ? `${apiBase}/extract-org-details` : '/extract-org-details';
+
+    setOrgPdfStatus(`Extracting details from "${file.name}"...`, 'loading');
+    orgPdfBtn.disabled = true;
+
+    try {
+        const response = await fetch(endpoint, { method: 'POST', body: payload });
+        if (!response.ok) {
+            let msg = `HTTP ${response.status}`;
+            try {
+                const e = await response.json();
+                msg = e.detail || e.message || msg;
+            } catch (_) {}
+            throw new Error(msg);
+        }
+
+        const data = await response.json();
+        let filled = 0;
+        ['org_name', 'mission', 'goals', 'budget', 'timeline'].forEach(id => {
+            const value = String(data[id] || '').trim();
+            if (value) {
+                document.getElementById(id).value = value;
+                filled += 1;
+            }
+        });
+
+        if (filled > 0) {
+            setOrgPdfStatus(`Auto-filled ${filled} field${filled === 1 ? '' : 's'}. Please review and edit before submitting.`, 'success');
+        } else {
+            setOrgPdfStatus('No usable organization details were detected in this PDF. You can still fill the form manually.', 'error');
+        }
+    } catch (err) {
+        setOrgPdfStatus(`Could not extract details: ${err.message}`, 'error');
+    } finally {
+        orgPdfBtn.disabled = false;
+        orgPdfInput.value = '';
+    }
+}
+
+if (orgPdfBtn && orgPdfInput) {
+    orgPdfBtn.addEventListener('click', () => orgPdfInput.click());
+    orgPdfInput.addEventListener('change', extractDetailsFromPdf);
+}
 
 // ── Build step rows ───────────────────────────────────────────────────────────
 function buildSteps() {
@@ -319,6 +469,15 @@ function buildSteps() {
         grid.appendChild(chip);
     });
     extraPdf.appendChild(grid);
+
+    REVIEWER_NODES.forEach(nodeId => {
+        const extra = document.getElementById(`extra-${nodeId}`);
+        if (!extra) return;
+        const attempts = document.createElement('div');
+        attempts.className = 'review-attempts';
+        attempts.id = `review-attempts-${nodeId}`;
+        extra.appendChild(attempts);
+    });
 }
 
 function secId(name) {
@@ -330,22 +489,124 @@ function setStepActive(nodeId) {
     const el = document.getElementById(`step-${nodeId}`);
     if (el) {
         el.classList.add('active');
-        el.classList.remove('done', 'error');
+        el.classList.remove('done', 'warning', 'error');
         document.getElementById(`icon-${nodeId}`).textContent = '⏳';
     }
 }
 function setStepDone(nodeId, labelOverride) {
     const el = document.getElementById(`step-${nodeId}`);
     if (el) {
-        el.classList.remove('active');
+        el.classList.remove('active', 'warning', 'error');
         el.classList.add('done');
         document.getElementById(`icon-${nodeId}`).textContent = '✓';
         if (labelOverride) document.getElementById(`label-${nodeId}`).textContent = labelOverride;
     }
 }
+function setStepWarning(nodeId) {
+    const el = document.getElementById(`step-${nodeId}`);
+    if (el) {
+        el.classList.remove('active', 'done', 'error');
+        el.classList.add('warning');
+        document.getElementById(`icon-${nodeId}`).textContent = '!';
+    }
+}
+function setStepError(nodeId) {
+    const el = document.getElementById(`step-${nodeId}`);
+    if (el) {
+        el.classList.remove('active', 'done', 'warning');
+        el.classList.add('error');
+        document.getElementById(`icon-${nodeId}`).textContent = '✕';
+    }
+}
+function setStepLabel(nodeId, text) {
+    const label = document.getElementById(`label-${nodeId}`);
+    if (label && text) label.textContent = text;
+}
 function setStepSub(nodeId, text) {
     const sub = document.getElementById(`sub-${nodeId}`);
     if (sub) sub.textContent = text;
+}
+
+function getMatchPercent(d) {
+    const raw = d.match_percent;
+    if (typeof raw === 'number' && raw >= 0 && raw <= 100) {
+        return Math.round(raw);
+    }
+    const score = typeof d.score === 'number' ? d.score : Number(d.score);
+    if (!Number.isNaN(score)) {
+        const clamped = Math.max(0, Math.min(10, score));
+        return Math.round(clamped * 10);
+    }
+    return 0;
+}
+
+function mapReviewAction(action, nodeId, verdict) {
+    if (action === 'retry_search') return 'Searching again for a better match';
+    if (action === 'retry_pdf') return 'Regenerating proposal and email';
+    if (action === 'halt_manual_review') return 'Manual review required';
+    if (action === 'proceed_with_warning') return 'Continuing with a manual-review warning';
+    if (action === 'proceed' && nodeId === 'grant_review' && verdict === 'fail') {
+        return 'Proceeding with best available grant match';
+    }
+    return 'Proceeding to next step';
+}
+
+function appendReviewAttempt(d) {
+    const nodeId = d.node;
+    const host = document.getElementById(`review-attempts-${nodeId}`);
+    if (!host) return;
+
+    const verdict = (d.verdict || '').toLowerCase() === 'pass' ? 'pass' : 'fail';
+    const card = document.createElement('div');
+    card.className = `review-card ${verdict}`;
+
+    const header = document.createElement('div');
+    header.className = 'review-card-header';
+    const matchPercent = getMatchPercent(d);
+    const title = document.createElement('span');
+    title.textContent = `Attempt ${d.attempt || '?'} of ${d.max_attempts || '?'}`;
+    const badge = document.createElement('span');
+    badge.className = `review-badge ${verdict}`;
+    badge.textContent = `MATCH ${matchPercent}%`;
+    header.appendChild(title);
+    header.appendChild(badge);
+    card.appendChild(header);
+
+    const score = document.createElement('div');
+    score.className = 'review-meta';
+    score.textContent = `Match: ${matchPercent}% · ${mapReviewAction(d.next_action, nodeId, verdict)}`;
+    card.appendChild(score);
+
+    const grantName = typeof d.grant_name === 'string' && d.grant_name.trim()
+        ? d.grant_name.trim()
+        : 'Unknown Grant';
+    const grant = document.createElement('div');
+    grant.className = 'review-grant';
+    grant.textContent = `Grant: ${grantName}`;
+    card.appendChild(grant);
+
+    if (Array.isArray(d.reasons) && d.reasons.length > 0) {
+        const list = document.createElement('ul');
+        list.className = 'review-reasons';
+        d.reasons.forEach(reason => {
+            const li = document.createElement('li');
+            li.textContent = String(reason);
+            list.appendChild(li);
+        });
+        card.appendChild(list);
+    }
+
+    const notes = document.createElement('div');
+    notes.className = 'review-note';
+    notes.textContent = `Improvement notes: ${d.improvement_notes || 'N/A'}`;
+    card.appendChild(notes);
+
+    const action = document.createElement('div');
+    action.className = 'review-action';
+    action.textContent = `Next action: ${mapReviewAction(d.next_action, nodeId, verdict)}`;
+    card.appendChild(action);
+
+    host.appendChild(card);
 }
 
 // ── Section chip helpers ──────────────────────────────────────────────────────
@@ -372,14 +633,42 @@ function handleEvent(evt) {
         // pdf_save is a sub-step of pdf, don't create a new row
         const nodeId = d.node === 'pdf_save' ? 'pdf' : d.node;
         setStepActive(nodeId);
+        if ((nodeId === 'search' || nodeId === 'extract') && d.label) {
+            setStepLabel(nodeId, d.label);
+        }
         setStepSub(nodeId, d.label || '');
         progressTitle.textContent = d.label || 'Working…';
     }
 
+    if (d.type === 'review_attempt') {
+        appendReviewAttempt(d);
+
+        const verdict = (d.verdict || '').toLowerCase();
+        const matchPercent = getMatchPercent(d);
+        const actionText = mapReviewAction(d.next_action, d.node, verdict);
+        setStepSub(d.node, `Match ${matchPercent}% · ${actionText}`);
+
+        if (d.node === 'grant_review' && d.next_action === 'retry_search') {
+            setStepActive('search');
+            setStepSub('search', 'Searching again for a better match');
+        }
+
+        if (verdict === 'pass') {
+            setStepDone(d.node);
+        } else if (d.next_action === 'halt_manual_review') {
+            setStepError(d.node);
+        } else {
+            setStepWarning(d.node);
+        }
+    }
+
     if (d.type === 'node_done') {
         const nodeId = d.node === 'pdf_save' ? 'pdf' : d.node;
-        if (d.node !== 'pdf_save') {          // wait for pdf_save to mark pdf done
+        if (d.node !== 'pdf_save' && !REVIEWER_NODES.has(nodeId)) { // reviewer state is handled by review_attempt
             setStepDone(nodeId, d.label);
+        }
+        if (REVIEWER_NODES.has(nodeId) && d.label) {
+            setStepSub(nodeId, d.label);
         }
         if (d.funder) setStepSub('extract', `Funder: ${d.funder}` + (d.deadline ? ` · Deadline: ${d.deadline}` : ''));
     }
@@ -437,8 +726,8 @@ async function submitForm() {
     buildSteps();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    const baseUrl  = document.getElementById('api-url').value.trim();
-    const endpoint = baseUrl ? baseUrl.replace(/\/submit(-stream)?$/, '') + '/submit-stream' : '/submit-stream';
+    const apiBase  = getApiBaseUrl();
+    const endpoint = apiBase ? `${apiBase}/submit-stream` : '/submit-stream';
 
     try {
         const response = await fetch(endpoint, {
@@ -498,9 +787,7 @@ function renderResult(text) {
     }
 
     if (text.includes('Grant_Proposal_Submission.pdf')) {
-        const apiBase = document.getElementById('api-url').value.trim()
-            ? document.getElementById('api-url').value.trim().replace('/submit-stream', '').replace('/submit', '')
-            : '';
+        const apiBase = getApiBaseUrl();
         const viewUrl = `${apiBase}/view/Grant_Proposal_Submission.pdf`;
         const dlUrl   = `${apiBase}/download/Grant_Proposal_Submission.pdf`;
 
@@ -544,6 +831,8 @@ function resetForm() {
     ['org_name','mission','goals','budget','timeline'].forEach(id => {
         document.getElementById(id).value = '';
     });
+    if (orgPdfInput) orgPdfInput.value = '';
+    setOrgPdfStatus('Optional: upload a PDF about your organization and we will prefill these fields for you to review.');
     resultContainer.style.display  = 'none';
     formContainer.style.display    = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });

@@ -10,7 +10,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 
 from dotenv import load_dotenv
-from fpdf import FPDF
 from email.message import EmailMessage
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -25,8 +24,14 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from datetime import timedelta
 
+<<<<<<< HEAD
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+=======
+from app.pdf_utils import render_proposal_pdf
+
+load_dotenv()
+>>>>>>> origin/main
 
 google_api_key = os.getenv("GOOGLE_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
@@ -107,30 +112,14 @@ def generate_grant_and_save_pdf(funder_details: str, project_details: str) -> st
         full_proposal[section] = response.content
 
     print("\n[Tool Executing] Formatting and saving to PDF...")
-    
-    # Format Text
     date_str = datetime.now().strftime("%B %d, %Y")
-    formatted_text = f"Grant Proposal Submission\nDate: {date_str}\n\n{'='*70}\n"
-    
-    for title, content in full_proposal.items():
-        formatted_text += f"\n\n{title.upper()}\n"
-        formatted_text += "-" * len(title) + "\n\n"
-        formatted_text += content.strip() + "\n"
-        formatted_text += "\n" + "="*70 + "\n"
-
-    # Save to PDF
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", '', 11)
-
-    # Clean text encoding to prevent latin-1 character errors in FPDF
-    cleaned_text = formatted_text.encode('latin-1', 'replace').decode('latin-1')
-    for line in cleaned_text.split("\n"):
-        pdf.multi_cell(0, 8, line)
-
     pdf_file_name = "Grant_Proposal_Submission.pdf"
-    pdf.output(pdf_file_name)
+    render_proposal_pdf(
+        proposal_sections={str(k): str(v) for k, v in full_proposal.items()},
+        output_path=pdf_file_name,
+        title="Grant Proposal Submission",
+        date_str=date_str,
+    )
     
     return f"Success! The grant proposal has been generated and saved locally as {pdf_file_name}."
 
@@ -363,6 +352,7 @@ def send_email(
             "to": recipient_email,
             "requested_to": to_email,
             "note": "Recipient enforced by guardrail.",
+            "sent_at": datetime.now().isoformat(timespec="seconds"),
         }
         if attached_file:
             result["attachment"] = attached_file
@@ -454,6 +444,7 @@ def create_grant_deadline_event(
     title: str,
     application_url: str = "",
     timezone: str = "America/Los_Angeles",
+    description: Optional[str] = None,
 ) -> str:
     """Create an all-day Google Calendar event for a grant deadline."""
     print("\n[Tool Executing] Creating calendar event for grant.")
@@ -461,11 +452,13 @@ def create_grant_deadline_event(
         service = _get_calendar_service()
         start_date = deadline_date
         end_date = (datetime.fromisoformat(deadline_date) + timedelta(days=1)).date().isoformat()
-        description = f"Grant deadline.\n\nApply: {application_url}" if application_url else "Grant deadline."
+        event_description = (description or "").strip()
+        if not event_description:
+            event_description = f"Grant deadline.\n\nApply: {application_url}" if application_url else "Grant deadline."
 
         event = {
             "summary": title,
-            "description": description,
+            "description": event_description,
             "start": {"date": start_date, "timeZone": timezone},
             "end": {"date": end_date, "timeZone": timezone},
         }
