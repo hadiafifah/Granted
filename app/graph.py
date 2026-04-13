@@ -15,6 +15,7 @@ from app.agent import (
     send_email,
 )
 from app.pdf_utils import build_proposal_plain_text, render_proposal_pdf
+from app.propublica_utils import search_propublica_nonprofit
 
 # Retry policy defaults
 MAX_SEARCH_RETRIES = 5
@@ -242,6 +243,8 @@ class GrantState(TypedDict):
     seen_grant_names: Optional[list[str]]
     extract_duplicate_only: Optional[bool]
     halt_reason: Optional[str]
+    propublica_result: Optional[Dict]
+    nonprofit_confidence: Optional[str]
 
 
 def parse_project_node(state: GrantState):
@@ -296,6 +299,39 @@ Only return the search query text. Do not use quotes or introductory text.
         "email_draft": "",
         "email_result": {},
         "calendar_event": "",
+        "propublica_result": {},
+        "nonprofit_confidence": "unknown",
+    }
+
+def propublica_node(state: GrantState):
+    _emit({"type": "node_start", "node": "propublica", "label": "Checking nonprofit grounding..."})
+
+    project_details = state.get("project_details", "") or ""
+    org_name = ""
+    if project_details:
+        first_line = project_details.split("\n")[0]
+        org_name = first_line.replace("Organization Name: ", "").strip()
+
+    result = search_propublica_nonprofit(org_name)
+    confidence = str(result.get("confidence", "low"))
+
+    label = (
+        f"Nonprofit grounding: {confidence}"
+        if result.get("matched_name")
+        else "No confident nonprofit match found"
+    )
+
+    _emit(
+        {
+            "type": "node_done",
+            "node": "propublica",
+            "label": label,
+        }
+    )
+
+    return {
+        "propublica_result": result,
+        "nonprofit_confidence": confidence,
     }
 
 
@@ -305,6 +341,19 @@ def search_node(state: GrantState):
     attempts = int(state.get("search_attempts") or 0)
     attempt_display = min(attempts + 1, MAX_SEARCH_RETRIES)
     base_query = (state.get("refined_search_query") or state.get("user_input") or "").strip()
+    propublica_result = _coerce_dict(state.get("propublica_result") or {})
+    nonprofit_confidence = str(state.get("nonprofit_confidence") or "unknown").lower()
+
+    if nonprofit_confidence == "high" and propublica_result.get("matched_name"):
+        official_name = str(propublica_result.get("matched_name") or "").strip()
+        city = str(propublica_result.get("city") or "").strip()
+        state_code = str(propublica_result.get("state") or "").strip()
+        enriched_bits = [official_name]
+        if city:
+            enriched_bits.append(city)
+        if state_code:
+            enriched_bits.append(state_code)
+        base_query = f"{base_query} {' '.join(enriched_bits)}".strip()
     query = f"{base_query} grant {datetime.now().year} nonprofit funding".strip()
     try:
         result = search_tool.invoke(query)
@@ -877,6 +926,24 @@ def route_after_content_review(state: GrantState) -> str:
 def send_node(state: GrantState):
     _emit({"type": "node_start", "node": "send", "label": "Sending outreach email..."})
     try:
+        nonprofit_confidence = str(state.get("nonprofit_confidence") or "unknown").lower()
+        if nonprofit_confidence == "low":
+            print(
+                "SEND NODE WARNING:",
+                {
+                    "status": "warning",
+                    "message": "No confident nonprofit record found in ProPublica. Proceeding with guardrailed test send only.",
+                },
+                flush=True,
+            )
+            _emit(
+                {
+                    "type": "node_done",
+                    "node": "send",
+                    "label": "Low-confidence nonprofit grounding; proceeding with guardrailed send",
+                }
+            )
+
         result = send_email.invoke(
             {
                 "to_email": "ignored@example.com",
@@ -899,6 +966,11 @@ def send_node(state: GrantState):
         )
 
         return {"email_result": result}
+
+    except Exception as e:
+        print("SEND NODE ERROR:", repr(e), flush=True)
+        _emit({"type": "node_done", "node": "send", "label": f"Email send error: {e}"})
+        return {"email_result": {"status": "error", "message": str(e)}}
 
     except Exception as e:
         print("SEND NODE ERROR:", repr(e), flush=True)
@@ -997,13 +1069,13 @@ def calendar_node(state: GrantState):
         _emit({"type": "node_done", "node": "calendar", "label": f"Calendar error: {e}"})
         return {"calendar_event": f"Failed to create event: {str(e)}"}
 
-
 def summary_node(state: GrantState):
     _emit({"type": "node_start", "node": "summary", "label": "Building final summary..."})
     try:
         funder_info = _coerce_dict(state.get("funder_info") or {})
         grant_review = _coerce_dict(state.get("grant_review") or {})
         content_review = _coerce_dict(state.get("content_review") or {})
+        propublica_result = _coerce_dict(state.get("propublica_result") or {})
 
         email_result = state.get("email_result") or {}
         if isinstance(email_result, str):
@@ -1032,12 +1104,28 @@ def summary_node(state: GrantState):
         email_message = email_result.get("message", "")
         calendar_status = state.get("calendar_event", "N/A")
 
-        summary =(
+        nonprofit_confidence = str(state.get("nonprofit_confidence") or "unknown")
+        nonprofit_match = str(propublica_result.get("matched_name") or "None")
+
+        note = str(propublica_result.get("note", "")).lower()
+
+        if nonprofit_confidence.lower() == "low" and "no confident nonprofit match found" in note and not halt_reason:
+            halt_reason = (
+                "No confident nonprofit record was found in ProPublica. "
+                "Proceed with caution and manually verify the organization before real outreach."
+            )
+
+        summary = (
             "## Grant Summary\n\n"
             f"**Funder:** {funder_info.get('funder_name', 'N/A')}\n\n"
             f"**Source URL:** {funder_info.get('source_url', 'N/A')}\n\n"
             f"**Deadline:** {funder_info.get('deadline', 'N/A')}\n\n"
             f"**Summary:** {funder_info.get('summary', 'N/A')}\n\n"
+            "---\n\n"
+            "## Nonprofit Grounding\n\n"
+            f"**Confidence:** {nonprofit_confidence}\n\n"
+            f"**ProPublica Match:** {nonprofit_match}\n\n"
+            f"**Note:** {propublica_result.get('note', 'N/A')}\n\n"
             "---\n\n"
             "## Review Gates\n\n"
             f"**Search Cycles:** {search_cycles}/{MAX_SEARCH_CYCLES}\n\n"
@@ -1061,7 +1149,7 @@ def summary_node(state: GrantState):
             f"**Status:** {email_status}\n\n"
             + (f"**Message:** {email_message}\n\n" if email_message else "")
             + "---\n\n"
-            "## Calendar\n\n"
+            + "## Calendar\n\n"
             f"**Status:** {calendar_status}\n\n"
             "---\n\n"
             "## Manual Review\n\n"
@@ -1079,6 +1167,7 @@ def summary_node(state: GrantState):
 builder = StateGraph(GrantState)
 
 builder.add_node("parse", parse_project_node)
+builder.add_node("propublica", propublica_node)
 builder.add_node("search", search_node)
 builder.add_node("extract", extract_funder_node)
 builder.add_node("grant_review", grant_review_node)
@@ -1090,7 +1179,8 @@ builder.add_node("calendar", calendar_node)
 builder.add_node("summary", summary_node)
 
 builder.set_entry_point("parse")
-builder.add_edge("parse", "search")
+builder.add_edge("parse", "propublica")
+builder.add_edge("propublica", "search")
 builder.add_edge("search", "extract")
 builder.add_conditional_edges(
     "extract",
