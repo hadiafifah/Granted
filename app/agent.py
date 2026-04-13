@@ -1,14 +1,17 @@
 ### `agent.py`
 import os
 import json
-import smtplib
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
+import base64
+import resend
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
 from dotenv import load_dotenv
 from email.message import EmailMessage
-
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain.tools import tool
@@ -21,16 +24,25 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from datetime import timedelta
 
+from pathlib import Path
 from app.pdf_utils import render_proposal_pdf
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
-os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
-os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
+google_api_key = os.getenv("GOOGLE_API_KEY")
+tavily_api_key = os.getenv("TAVILY_API_KEY")
+
+if not google_api_key:
+    raise RuntimeError("GOOGLE_API_KEY missing. Check .env")
+if not tavily_api_key:
+    raise RuntimeError("TAVILY_API_KEY missing. Check .env")
+
+os.environ["GOOGLE_API_KEY"] = google_api_key
+os.environ["TAVILY_API_KEY"] = tavily_api_key
 print("✓ API keys configured successfully!")
 
 # Guardrail: all proposal emails must go to this fixed recipient.
-PROPOSAL_RECIPIENT_EMAIL = "anhadi@ucdavis.edu"
+PROPOSAL_RECIPIENT_EMAIL = "chaner@whitman.edu"
 
 def _is_env_present(name: str) -> bool:
     return bool((os.getenv(name) or "").strip())
@@ -212,10 +224,10 @@ def send_email(
     pdf_path: Optional[str] = "Grant_Proposal_Submission.pdf",
 ) -> Dict[str, str]:
     """
-    Sends an email using SMTP.
+    Sends an email using the Resend API.
+    The recipient is always enforced by the guardrail email.
     """
     try:
-        # Hard guardrail: ignore any discovered or user-provided recipient.
         recipient_email = PROPOSAL_RECIPIENT_EMAIL
 
         if draft and (not subject or not body):
@@ -229,63 +241,79 @@ def send_email(
                 "message": "Missing subject/body. Provide them directly or pass `draft` from generate_email_draft.",
             }
 
-        sender_email = (os.getenv("SMTP_SENDER_EMAIL") or "").strip()
-        sender_password = (os.getenv("SMTP_APP_PASSWORD") or "").strip()
+        resend_api_key = (os.getenv("RESEND_API_KEY") or "").strip()
+        sender_email = (os.getenv("RESEND_FROM_EMAIL") or "").strip()
 
-        if not sender_email or not sender_password:
+        if not resend_api_key:
             return {
                 "status": "error",
-                "message": (
-                    "Missing SMTP_SENDER_EMAIL or SMTP_APP_PASSWORD in environment. "
-                    f"Detected env presence: SMTP_SENDER_EMAIL={_is_env_present('SMTP_SENDER_EMAIL')}, "
-                    f"SMTP_APP_PASSWORD={_is_env_present('SMTP_APP_PASSWORD')}"
-                ),
+                "message": "Missing RESEND_API_KEY in environment.",
             }
 
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = sender_email
-        msg["To"] = recipient_email
-        msg.set_content(body)
+        if not sender_email:
+            return {
+                "status": "error",
+                "message": "Missing RESEND_FROM_EMAIL in environment.",
+            }
+
+        resend.api_key = resend_api_key
+
+        params = {
+            "from": sender_email,
+            "to": [recipient_email],
+            "subject": subject,
+            "text": body,
+        }
 
         attached_file = None
+
         if attach_proposal_pdf:
             path_to_attach = (pdf_path or "Grant_Proposal_Submission.pdf").strip()
+
             if not os.path.exists(path_to_attach):
                 return {
                     "status": "error",
                     "message": f"Attachment not found: {path_to_attach}",
                 }
+
             with open(path_to_attach, "rb") as f:
                 pdf_bytes = f.read()
-            msg.add_attachment(
-                pdf_bytes,
-                maintype="application",
-                subtype="pdf",
-                filename=os.path.basename(path_to_attach),
-            )
+
+            params["attachments"] = [
+                {
+                    "filename": os.path.basename(path_to_attach),
+                    "content": base64.b64encode(pdf_bytes).decode("utf-8"),
+                }
+            ]
             attached_file = path_to_attach
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient_email, msg.as_string())
+        result = resend.Emails.send(params)
 
-        result = {
+        response = {
             "status": "sent",
             "to": recipient_email,
             "requested_to": to_email,
             "note": "Recipient enforced by guardrail.",
-            "sent_at": datetime.now().isoformat(timespec="seconds"),
+            "provider": "resend",
         }
+
+        if isinstance(result, dict) and result.get("id"):
+            response["message_id"] = str(result["id"])
+
         if attached_file:
-            result["attachment"] = attached_file
-        return result
+            response["attachment"] = attached_file
+
+        return response
 
     except Exception as e:
+        print("EMAIL ERROR:", repr(e))
         return {"status": "error", "message": str(e)}
 
-# Tool 4: Google Calendar API tool
-SCOPES =["https://www.googleapis.com/auth/calendar.events"]
+# Tool 4: Google Calendar API tool and Email
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 
 def _get_calendar_service():
     creds = None
@@ -336,6 +364,7 @@ def _get_calendar_service():
         with open(token_save_path, "w") as token:
             token.write(creds.to_json())
     return build("calendar", "v3", credentials=creds)
+
 
 @tool
 def create_grant_deadline_event(
