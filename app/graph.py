@@ -580,6 +580,79 @@ Rules:
     review["reasons"] = review.get("reasons") if isinstance(review.get("reasons"), list) else []
     review["improvement_notes"] = str(review.get("improvement_notes", "") or "").strip()
     halt_reason = None
+        
+    # TRUST GUARDRAILS
+    # Hard fail: expired deadlines
+    deadline_text = str(funder_info.get("deadline", "") or "").strip()
+    if deadline_text and deadline_text.lower() not in {"none", "n/a", "unknown", "tbd"}:
+        try:
+            deadline_date = datetime.fromisoformat(deadline_text).date()
+            today = datetime.now().date()
+            if deadline_date < today:
+                review["verdict"] = "fail"
+                review["score"] = min(review["score"], 1)
+                review["match_percent"] = _score_to_match_percent(review["score"])
+                review["reasons"] = list(review["reasons"]) + [
+                    f"Grant deadline is expired ({deadline_text})."
+                ]
+                if review["improvement_notes"]:
+                    review["improvement_notes"] += " Search for active grants with future deadlines."
+                else:
+                    review["improvement_notes"] = "Search for active grants with future deadlines."
+        except Exception:
+            pass
+
+    #Hard fail: obvious aggregator / roundup / non-primary source pages
+    source_url = str(funder_info.get("source_url", "") or "").strip().lower()
+
+    suspicious_domains = [
+        "makewonder.com",
+        "womenhack.com",
+        "africanngos.org",
+        "onboardmeetings.com",
+        "grantedai.com",
+    ]
+    suspicious_path_terms = [
+        "grant-opportunities",
+        "roundup",
+        "/blog/",
+        "/news/",
+    ]
+
+    is_suspicious_source = False
+    if source_url:
+        if any(domain in source_url for domain in suspicious_domains):
+            is_suspicious_source = True
+        if any(term in source_url for term in suspicious_path_terms):
+            is_suspicious_source = True
+
+    if is_suspicious_source:
+        review["verdict"] = "fail"
+        review["score"] = min(review["score"], 3)
+        review["match_percent"] = _score_to_match_percent(review["score"])
+        review["reasons"] = list(review["reasons"]) + [
+            "Source appears to be an aggregator, roundup, or non-official page rather than a primary funder source."
+        ]
+        if review["improvement_notes"]:
+            review["improvement_notes"] += " Prefer official funder or grant program pages."
+        else:
+            review["improvement_notes"] = "Prefer official funder or grant program pages."
+
+    # Soft penalty: grant name and URL look weakly aligned
+    # This is NOT a hard fail by itself because many official URLs are generic.
+    funder_name = str(funder_info.get("funder_name", "") or "").lower().strip()
+    if funder_name and source_url:
+        name_tokens = [word for word in funder_name.split() if len(word) > 4]
+        if name_tokens and not any(token in source_url for token in name_tokens):
+            review["score"] = min(review["score"], 6)
+            review["match_percent"] = _score_to_match_percent(review["score"])
+            review["reasons"] = list(review["reasons"]) + [
+                "Grant name does not clearly align with the source URL; verify that the page corresponds to the same opportunity."
+            ]
+            if review["improvement_notes"]:
+                review["improvement_notes"] += " Double-check that the selected grant and source URL refer to the same opportunity."
+            else:
+                review["improvement_notes"] = "Double-check that the selected grant and source URL refer to the same opportunity."
 
     if not _is_verifiable_grant(funder_info):
         review["verdict"] = "fail"
@@ -966,11 +1039,6 @@ def send_node(state: GrantState):
         )
 
         return {"email_result": result}
-
-    except Exception as e:
-        print("SEND NODE ERROR:", repr(e), flush=True)
-        _emit({"type": "node_done", "node": "send", "label": f"Email send error: {e}"})
-        return {"email_result": {"status": "error", "message": str(e)}}
 
     except Exception as e:
         print("SEND NODE ERROR:", repr(e), flush=True)
