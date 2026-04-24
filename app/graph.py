@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Optional, TypedDict
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from app.agent import (
     create_grant_deadline_event,
     generate_email_draft,
     llm,
+    reviewer_llm,
     proposal_schema,
     search_tool,
     send_email,
@@ -21,6 +23,16 @@ from app.propublica_utils import search_propublica_nonprofit
 MAX_SEARCH_RETRIES = 5
 MAX_SEARCH_CYCLES = 15
 MAX_CONTENT_RETRIES = 2
+
+DEFAULT_REVIEW_PROFILE = "demo"
+REVIEW_PROFILE = (os.getenv("GRANT_REVIEW_PROFILE", DEFAULT_REVIEW_PROFILE) or DEFAULT_REVIEW_PROFILE).strip().lower()
+if REVIEW_PROFILE not in {"strict", "balanced", "demo"}:
+    REVIEW_PROFILE = "balanced"
+
+GRANT_PASS_SCORE = {"strict": 7, "balanced": 6, "demo": 5}[REVIEW_PROFILE]
+CONTENT_PASS_SCORE = {"strict": 7, "balanced": 6, "demo": 5}[REVIEW_PROFILE]
+SUSPICIOUS_SOURCE_MAX_SCORE = {"strict": 3, "balanced": 5, "demo": 7}[REVIEW_PROFILE]
+NAME_URL_MISMATCH_MAX_SCORE = {"strict": 6, "balanced": 7, "demo": 8}[REVIEW_PROFILE]
 
 # streaming queue (module-level, set before each run)
 _stream_queue: Optional[asyncio.Queue] = None
@@ -94,6 +106,55 @@ def _coerce_match_percent(match_value, fallback_score=0) -> int:
     if 0 <= match_percent <= 100:
         return match_percent
     return _score_to_match_percent(fallback_score)
+
+
+def _clamp_score(value) -> int:
+    try:
+        score = int(value)
+    except Exception:
+        score = 0
+    return max(0, min(10, score))
+
+
+def _grant_reviewer_role() -> str:
+    if REVIEW_PROFILE == "strict":
+        return "You are a strict grant-fit reviewer."
+    if REVIEW_PROFILE == "demo":
+        return "You are a fair but demo-friendly grant-fit reviewer."
+    return "You are a balanced grant-fit reviewer."
+
+
+def _content_reviewer_role() -> str:
+    if REVIEW_PROFILE == "strict":
+        return "You are a strict grant-communications reviewer."
+    if REVIEW_PROFILE == "demo":
+        return "You are a fair but demo-friendly grant-communications reviewer."
+    return "You are a balanced grant-communications reviewer."
+
+
+def _grant_profile_rules() -> str:
+    if REVIEW_PROFILE == "strict":
+        return (
+            "- Be strict. Fail if fit is weak, ambiguous, stale, or not actionable.\n"
+            "- Fail if the funder is unnamed/generic or if source_url is missing/invalid."
+        )
+    if REVIEW_PROFILE == "demo":
+        return (
+            "- Be realistically optimistic. Reward partial alignment when the opportunity is plausible.\n"
+            "- Only fail for critical issues (expired deadline, unnamed funder, or invalid/missing source_url)."
+        )
+    return (
+        "- Be firm but fair. Reward meaningful alignment even if some details are incomplete.\n"
+        "- Fail for critical issues (expired deadline, unnamed funder, or invalid/missing source_url)."
+    )
+
+
+def _content_profile_rules() -> str:
+    if REVIEW_PROFILE == "strict":
+        return "- Fail if the proposal/email are generic, misaligned, or weakly tied to funder priorities."
+    if REVIEW_PROFILE == "demo":
+        return "- Be realistically optimistic. Pass when proposal/email clearly align overall, even with minor weaknesses."
+    return "- Be firm but fair. Pass if the core narrative aligns with mission and priorities, with only minor issues."
 
 
 def normalize_grant_key(name: str) -> str:
@@ -541,7 +602,7 @@ def grant_review_node(state: GrantState):
     original_query = (state.get("user_input") or "").strip()
 
     prompt = f"""
-You are a strict grant-fit reviewer.
+{_grant_reviewer_role()}
 Evaluate if this selected grant is relevant and useful for the nonprofit profile.
 
 PROJECT DETAILS:
@@ -558,11 +619,16 @@ Return exactly one JSON object with these keys:
 - refined_search_query: better search query text if verdict is fail, otherwise null
 
 Rules:
-- Be strict. Fail if fit is weak, ambiguous, stale, or not actionable.
-- Fail if the funder is unnamed/generic or if source_url is missing/invalid.
+{_grant_profile_rules()}
+- Use these score anchors:
+  - 9-10: excellent fit with clear mission/priority overlap and actionable details.
+  - 7-8: strong fit with minor gaps.
+  - 5-6: moderate fit with notable gaps.
+  - 3-4: weak fit.
+  - 0-2: unusable or clearly mismatched.
 - Return only raw JSON.
 """
-    raw = llm.invoke(prompt).content.strip()
+    raw = reviewer_llm.invoke(prompt).content.strip()
     review = _parse_json_object(
         raw,
         {
@@ -575,11 +641,12 @@ Rules:
     )
 
     review["verdict"] = _normalize_verdict(review.get("verdict"), default="fail")
-    review["score"] = int(review.get("score", 0) or 0)
+    review["score"] = _clamp_score(review.get("score", 0))
     review["match_percent"] = _score_to_match_percent(review["score"])
     review["reasons"] = review.get("reasons") if isinstance(review.get("reasons"), list) else []
     review["improvement_notes"] = str(review.get("improvement_notes", "") or "").strip()
     halt_reason = None
+    force_fail = False
         
     # TRUST GUARDRAILS
     # Hard fail: expired deadlines
@@ -589,7 +656,7 @@ Rules:
             deadline_date = datetime.fromisoformat(deadline_text).date()
             today = datetime.now().date()
             if deadline_date < today:
-                review["verdict"] = "fail"
+                force_fail = True
                 review["score"] = min(review["score"], 1)
                 review["match_percent"] = _score_to_match_percent(review["score"])
                 review["reasons"] = list(review["reasons"]) + [
@@ -602,7 +669,7 @@ Rules:
         except Exception:
             pass
 
-    #Hard fail: obvious aggregator / roundup / non-primary source pages
+    # Source quality penalty: stricter in strict profile, softer in demo profile.
     source_url = str(funder_info.get("source_url", "") or "").strip().lower()
 
     suspicious_domains = [
@@ -627,12 +694,13 @@ Rules:
             is_suspicious_source = True
 
     if is_suspicious_source:
-        review["verdict"] = "fail"
-        review["score"] = min(review["score"], 3)
+        review["score"] = min(review["score"], SUSPICIOUS_SOURCE_MAX_SCORE)
         review["match_percent"] = _score_to_match_percent(review["score"])
         review["reasons"] = list(review["reasons"]) + [
             "Source appears to be an aggregator, roundup, or non-official page rather than a primary funder source."
         ]
+        if REVIEW_PROFILE == "strict":
+            force_fail = True
         if review["improvement_notes"]:
             review["improvement_notes"] += " Prefer official funder or grant program pages."
         else:
@@ -644,7 +712,7 @@ Rules:
     if funder_name and source_url:
         name_tokens = [word for word in funder_name.split() if len(word) > 4]
         if name_tokens and not any(token in source_url for token in name_tokens):
-            review["score"] = min(review["score"], 6)
+            review["score"] = min(review["score"], NAME_URL_MISMATCH_MAX_SCORE)
             review["match_percent"] = _score_to_match_percent(review["score"])
             review["reasons"] = list(review["reasons"]) + [
                 "Grant name does not clearly align with the source URL; verify that the page corresponds to the same opportunity."
@@ -655,8 +723,8 @@ Rules:
                 review["improvement_notes"] = "Double-check that the selected grant and source URL refer to the same opportunity."
 
     if not _is_verifiable_grant(funder_info):
-        review["verdict"] = "fail"
-        review["score"] = min(int(review.get("score", 0) or 0), 1)
+        force_fail = True
+        review["score"] = min(_clamp_score(review.get("score", 0)), 1)
         review["match_percent"] = _score_to_match_percent(review["score"])
         review["reasons"] = list(review["reasons"]) + [
             "Selected grant is not verifiable (missing named funder and/or valid source URL)."
@@ -665,6 +733,10 @@ Rules:
             review["improvement_notes"] = (
                 "Search for a named grant program and include a direct source URL before proceeding."
             )
+
+    review["score"] = _clamp_score(review.get("score", 0))
+    review["match_percent"] = _score_to_match_percent(review["score"])
+    review["verdict"] = "fail" if force_fail else ("pass" if review["score"] >= GRANT_PASS_SCORE else "fail")
 
     refined_query = review.get("refined_search_query")
     if review["verdict"] == "pass":
@@ -897,7 +969,7 @@ def content_review_node(state: GrantState):
     proposal_context = proposal_payload if proposal_sections else proposal_text
 
     prompt = f"""
-You are a strict grant-communications reviewer.
+{_content_reviewer_role()}
 Evaluate whether the proposal and outreach email are appropriate for both:
 1) the selected grant priorities, and
 2) the nonprofit organization profile.
@@ -921,11 +993,17 @@ Return exactly one JSON object with these keys:
 - improvement_notes: concise edits needed to pass
 
 Rules:
-- Fail if the proposal/email are generic, misaligned, or weakly tied to funder priorities.
+{_content_profile_rules()}
 - Assess section completeness using the full section map above. Do not claim "cut off" unless text clearly ends abruptly.
+- Use these score anchors:
+  - 9-10: excellent alignment and specificity.
+  - 7-8: strong alignment with minor issues.
+  - 5-6: acceptable alignment with clear improvement areas.
+  - 3-4: weak alignment.
+  - 0-2: poor fit or unusable.
 - Return only raw JSON.
 """
-    raw = llm.invoke(prompt).content.strip()
+    raw = reviewer_llm.invoke(prompt).content.strip()
     review = _parse_json_object(
         raw,
         {
@@ -936,10 +1014,11 @@ Rules:
         },
     )
     review["verdict"] = _normalize_verdict(review.get("verdict"), default="fail")
-    review["score"] = int(review.get("score", 0) or 0)
+    review["score"] = _clamp_score(review.get("score", 0))
     review["match_percent"] = _score_to_match_percent(review["score"])
     review["reasons"] = review.get("reasons") if isinstance(review.get("reasons"), list) else []
     review["improvement_notes"] = str(review.get("improvement_notes", "") or "").strip()
+    review["verdict"] = "pass" if review["score"] >= CONTENT_PASS_SCORE else "fail"
 
     halt_reason = None
     if review["verdict"] == "pass":
@@ -1196,6 +1275,7 @@ def summary_node(state: GrantState):
             f"**Note:** {propublica_result.get('note', 'N/A')}\n\n"
             "---\n\n"
             "## Review Gates\n\n"
+            f"**Review Profile:** {REVIEW_PROFILE}\n\n"
             f"**Search Cycles:** {search_cycles}/{MAX_SEARCH_CYCLES}\n\n"
             f"**Grant Match:** {grant_match}% (attempts: {grant_attempts}/{MAX_SEARCH_RETRIES})\n\n"
             f"{_listify_text(grant_review.get('reasons'))}\n\n"

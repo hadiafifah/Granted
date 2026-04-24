@@ -47,7 +47,8 @@ PROPOSAL_RECIPIENT_EMAIL = "chaner@whitman.edu"
 def _is_env_present(name: str) -> bool:
     return bool((os.getenv(name) or "").strip())
 
-llm = ChatGoogleGenerativeAI(model = "gemini-2.5-flash")
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+reviewer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
 
 proposal_schema =[
     "Executive Summary",
